@@ -1,0 +1,41 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "/Users/zauclair/Library/Arduino15/packages/esp8266/tools/**",
+                "/Users/zauclair/Library/Arduino15/packages/esp8266/hardware/esp8266/2.6.3/**",
+                "${workspaceRoot}",
+                "/Users/zauclair/Downloads/Elegoo\\ Super\\ Starter\\ Kit\\ for\\ UNO\\ V1.0.2019.09.17/English/code/Lesson\\ 10\\ Ultrasonic\\ Sensor\\ Module/HC-SR04/*",
+                "/Users/zauclair/Downloads/Arduino-1.8.10-macosx/Arduino.app/Contents/Java/libraries/Esplora/src",
+                "/Users/zauclair/Downloads/Arduino-1.8.10-macosx/Arduino.app/Contents/Java/hardware/arduino/avr/**",
+                "/Users/zauclair/Downloads/Arduino-1.8.10-macosx/Arduino.app/Contents/Java/tools/**",
+                "/Users/zauclair/Documents/Arduino/libraries/DHT"
+            ],
+            "forcedInclude": [],
+            "macFrameworkPath": [
+                "/System/Library/Frameworks",
+                "/Library/Frameworks"
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceRoot}",
+                    "/Users/zauclair/Library/Arduino15/packages",
+                    "${env:MAC_PACKAGES_PATH}/arduino/tools/CMSIS/4.5.0/CMSIS/Include",
+                    "${env:MAC_PACKAGES_PATH}/arduino/tools/CMSIS-Atmel/1.2.0/CMSIS/Device/ATMEL",
+                    "${env:MAC_PACKAGES_PATH}/gamebuino/hardware/samd/1.2.2/cores/arduino",
+                    "${env:MAC_PACKAGES_PATH}/gamebuino/hardware/samd/1.2.2/variants/gamebuino_meta",
+                    "${env:MAC_SKETCHBOOK_PATH}/libraries/Gamebuino_META/src",
+                    "${env:MAC_PACKAGES_PATH}/gamebuino/hardware/samd/1.2.2/libraries/SPI",
+                    "/Users/zauclair/Documents/Arduino/libraries"
+                ],
+                "limitSymbolsToIncludedHeaders": true
+            },
+            "intelliSenseMode": "clang-x64",
+            "compilerPath": "/usr/bin/clang",
+            "cStandard": "c11",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 4
+}
