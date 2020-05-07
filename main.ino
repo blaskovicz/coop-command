@@ -4,6 +4,12 @@
 #include <ESP8266mDNS.h>
 #include <AdafruitIO_WiFi.h>
 
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#include <Fonts/FreeMonoBold12pt7b.h>  // Add a custom font
+#include <Fonts/FreeMono9pt7b.h>  // Add a custom font
+
 static const uint8_t _D0 = 16;
 static const uint8_t _D1 = 5;
 static const uint8_t _D2 = 4;
@@ -29,13 +35,16 @@ static const uint8_t _D10 = 1;
 
 #endif
 
-const int pinBlue = _D1;
-const int pinGreen = _D2;
+const int pinBlue = _D7;
+const int pinGreen = _D5;
 const int pinRed = _D6;
 
 int lastRed = 255;
 int lastGreen = 255;
 int lastBlue = 255;
+
+// create instance of oled display
+Adafruit_SSD1306 display(128, 64);
 
 // Create an instance of the server
 ESP8266WebServer server(ENV_PORT);
@@ -45,6 +54,10 @@ AdafruitIO_WiFi io(ENV_AIO_USERNAME, ENV_AIO_KEY, ENV_WIFI_SSID, ENV_WIFI_PASS);
 
 // Using that, connect to the digital feed
 AdafruitIO_Feed *digitalFeed = io.feed("digital");
+
+String rgbDisplay() {
+  return String("rgb(" + String(lastRed) + ", " + String(lastGreen) + ", " + String(lastBlue) + ")");
+}
 
 // update the led rgb value when we receive valid feed message
 void handleAdafruitMessage(AdafruitIO_Data *data) {
@@ -61,9 +74,7 @@ void handleAdafruitMessage(AdafruitIO_Data *data) {
   lastGreen = data->toGreen();
   lastBlue = data->toBlue();
 
-  Serial.println("red:" + String(lastRed));
-  Serial.println("green:" + String(lastGreen));
-  Serial.println("blue:" + String(lastBlue));
+  Serial.println(rgbDisplay());
 
   analogWrite(pinRed, lastRed);
   analogWrite(pinGreen, lastGreen);  
@@ -88,6 +99,25 @@ void connectAdafruitIO() {
   Serial.println();
   Serial.println(io.statusText());
   digitalFeed->get();
+}
+
+void displayInit() {
+  delay(100);  // This delay is needed to let the display to initialize
+
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // Initialize display with the I2C address of 0x3C
+ 
+  display.clearDisplay();  // Clear the buffer
+
+  display.setTextColor(WHITE);  // Set color of the text
+
+  display.setRotation(0);  // Set orientation. Goes from 0, 1, 2 or 3
+
+  //display.setTextWrap(false);  // By default, long lines of text are set to automatically “wrap” back to the leftmost column.
+                               // To override this behavior (so text will run off the right side of the display - useful for
+                               // scrolling marquee effects), use setTextWrap(false). The normal wrapping behavior is restored
+                               // with setTextWrap(true).
+
+  display.dim(0);  //Set brightness (0 is maximun and 1 is a little dim)
 }
 
 void ledInit() {
@@ -271,8 +301,20 @@ void connectAndServeHTTP() {
   Serial.println(WiFi.localIP());
 }
 
+void renderDisplay() {
+  display.clearDisplay();  // Clear the display so we can refresh
+  display.setFont(&FreeMono9pt7b);  // Set a custom font
+  display.setTextSize(0);  // Set text size. We are using a custom font so you should always use the text size of 0
+  display.setCursor(0, 10);  // (x,y)
+  display.println(WiFi.localIP());  // Text or value to print  
+  display.setCursor(0, 30);
+  display.println(rgbDisplay());
+  display.display();  // Print everything we set previously
+}
+
 void setup() {
   serialInit();
+  displayInit();
   ledInit();
   connectAdafruitIO();
   connectAndServeHTTP();
@@ -290,6 +332,9 @@ void loop() {
 
   // update local dns, just in case
   MDNS.update();
+
+  // update oled display
+  renderDisplay();
 }
 
 // TODO: OTA updates vvv
