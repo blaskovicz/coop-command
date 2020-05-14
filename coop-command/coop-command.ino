@@ -7,8 +7,10 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
-#include <Fonts/FreeMonoBold12pt7b.h>  // Add a custom font
-#include <Fonts/FreeMono9pt7b.h>  // Add a custom font
+#include <Fonts/FreeMonoBold12pt7b.h> // Add a custom font
+#include <Fonts/FreeMono9pt7b.h>      // Add a custom font
+
+#include "env.h"
 
 static const uint8_t _D0 = 16;
 static const uint8_t _D1 = 5;
@@ -21,19 +23,6 @@ static const uint8_t _D7 = 13;
 static const uint8_t _D8 = 15;
 static const uint8_t _D9 = 3;
 static const uint8_t _D10 = 1;
-
-
-/* env setup, to be filled in before usage in liue of EEPROM persistence */
-#ifndef ENV_H
-#define ENV_H
-
-#define ENV_WIFI_SSID     ""
-#define ENV_WIFI_PASS     ""
-#define ENV_AIO_USERNAME  ""
-#define ENV_AIO_KEY       ""
-#define ENV_PORT 80
-
-#endif
 
 const int pinBlue = _D7;
 const int pinGreen = _D5;
@@ -55,17 +44,19 @@ AdafruitIO_WiFi io(ENV_AIO_USERNAME, ENV_AIO_KEY, ENV_WIFI_SSID, ENV_WIFI_PASS);
 // Using that, connect to the digital feed
 AdafruitIO_Feed *digitalFeed = io.feed("digital");
 
-String rgbDisplay() {
+String rgbDisplay()
+{
   return String("rgb(" + String(lastRed) + ", " + String(lastGreen) + ", " + String(lastBlue) + ")");
 }
 
 // update the led rgb value when we receive valid feed message
-void handleAdafruitMessage(AdafruitIO_Data *data) {
+void handleAdafruitMessage(AdafruitIO_Data *data)
+{
   String dataString = data->toString();
   Serial.println("received <- " + dataString);
-  
 
-  if (dataString.indexOf("#") != 0) {
+  if (dataString.indexOf("#") != 0)
+  {
     Serial.println("... malformed message, ignored.");
     return;
   }
@@ -77,11 +68,12 @@ void handleAdafruitMessage(AdafruitIO_Data *data) {
   Serial.println(rgbDisplay());
 
   analogWrite(pinRed, lastRed);
-  analogWrite(pinGreen, lastGreen);  
+  analogWrite(pinGreen, lastGreen);
   analogWrite(pinBlue, lastBlue);
 }
 
-void connectAdafruitIO() {
+void connectAdafruitIO()
+{
   // connect to io.adafruit.com
   Serial.print("Connecting to Adafruit IO");
   io.connect();
@@ -90,7 +82,8 @@ void connectAdafruitIO() {
   digitalFeed->onMessage(handleAdafruitMessage);
 
   // wait for a connection
-  while(io.status() < AIO_CONNECTED) {
+  while (io.status() < AIO_CONNECTED)
+  {
     Serial.print(".");
     delay(500);
   }
@@ -101,42 +94,47 @@ void connectAdafruitIO() {
   digitalFeed->get();
 }
 
-void displayInit() {
-  delay(100);  // This delay is needed to let the display to initialize
+void displayInit()
+{
+  delay(100); // This delay is needed to let the display to initialize
 
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // Initialize display with the I2C address of 0x3C
- 
-  display.clearDisplay();  // Clear the buffer
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C); // Initialize display with the I2C address of 0x3C
 
-  display.setTextColor(WHITE);  // Set color of the text
+  display.clearDisplay(); // Clear the buffer
 
-  display.setRotation(0);  // Set orientation. Goes from 0, 1, 2 or 3
+  display.setTextColor(WHITE); // Set color of the text
+
+  display.setRotation(0); // Set orientation. Goes from 0, 1, 2 or 3
 
   //display.setTextWrap(false);  // By default, long lines of text are set to automatically “wrap” back to the leftmost column.
-                               // To override this behavior (so text will run off the right side of the display - useful for
-                               // scrolling marquee effects), use setTextWrap(false). The normal wrapping behavior is restored
-                               // with setTextWrap(true).
+  // To override this behavior (so text will run off the right side of the display - useful for
+  // scrolling marquee effects), use setTextWrap(false). The normal wrapping behavior is restored
+  // with setTextWrap(true).
 
-  display.dim(0);  //Set brightness (0 is maximun and 1 is a little dim)
+  display.dim(0); //Set brightness (0 is maximun and 1 is a little dim)
 }
 
-void ledInit() {
+void ledInit()
+{
   // prepare LEDs
-  int pins [3] = {pinRed, pinGreen, pinBlue};
-  for(int i = 0; i < 3; i++) {
+  int pins[3] = {pinRed, pinGreen, pinBlue};
+  for (int i = 0; i < 3; i++)
+  {
     pinMode(pins[i], OUTPUT);
     analogWrite(pins[i], 255);
   }
 }
 
-void serialInit() {
+void serialInit()
+{
   // set up serial monitor and wait for it to open
   Serial.begin(115200);
 
-  do {
+  do
+  {
     delay(100);
-  } while(!Serial);
-  
+  } while (!Serial);
+
   Serial.println();
 }
 
@@ -207,11 +205,13 @@ const char *indexPage = R""""(
 </html>
 )"""";
 
-void handleRoot() {
+void handleRoot()
+{
   server.send(200, "text/html", indexPage);
 }
 
-void handleGetLEDs() {
+void handleGetLEDs()
+{
   // TODO: caching reads
   server.send(200, "application/json", "{\"r\": " + String(lastRed) + ", \"g\": " + String(lastGreen) + ", \"b\": " + String(lastBlue) + "}");
 }
@@ -244,7 +244,8 @@ void handleGetLEDs() {
 //   }
 // }
 
-void handleNotFound() {
+void handleNotFound()
+{
   String message = "File Not Found\n\n";
   message += "URI: ";
   message += server.uri();
@@ -253,13 +254,15 @@ void handleNotFound() {
   message += "\nArgs: ";
   message += server.args();
   message += "\n";
-  for (uint8_t i = 0; i < server.args(); i++) {
+  for (uint8_t i = 0; i < server.args(); i++)
+  {
     message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
   }
   server.send(404, "text/plain", message);
 }
 
-void connectWifiClient() {
+void connectWifiClient()
+{
   // Connect to WiFi network
   Serial.println();
   Serial.println();
@@ -270,7 +273,8 @@ void connectWifiClient() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ENV_WIFI_SSID, ENV_WIFI_PASS);
 
-  while (WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED)
+  {
     delay(500);
     Serial.print(F("."));
   }
@@ -278,11 +282,13 @@ void connectWifiClient() {
   Serial.println(F("WiFi connected"));
 }
 
-void connectAndServeHTTP() {
+void connectAndServeHTTP()
+{
   connectWifiClient();
 
   // start local dns server (coop-command.local)
-  if (MDNS.begin("coop-command")) {
+  if (MDNS.begin("coop-command"))
+  {
     Serial.println("MDNS responder started");
   }
 
@@ -291,7 +297,7 @@ void connectAndServeHTTP() {
   server.on("/api/leds", handleGetLEDs);
   // server.on("/postplain/", handlePlain);
   // server.on("/postform/", handleForm);
-  server.onNotFound(handleNotFound);  
+  server.onNotFound(handleNotFound);
 
   // start server
   server.begin();
@@ -301,18 +307,20 @@ void connectAndServeHTTP() {
   Serial.println(WiFi.localIP());
 }
 
-void renderDisplay() {
-  display.clearDisplay();  // Clear the display so we can refresh
-  display.setFont(&FreeMono9pt7b);  // Set a custom font
-  display.setTextSize(0);  // Set text size. We are using a custom font so you should always use the text size of 0
-  display.setCursor(0, 10);  // (x,y)
-  display.println(WiFi.localIP());  // Text or value to print  
+void renderDisplay()
+{
+  display.clearDisplay();          // Clear the display so we can refresh
+  display.setFont(&FreeMono9pt7b); // Set a custom font
+  display.setTextSize(0);          // Set text size. We are using a custom font so you should always use the text size of 0
+  display.setCursor(0, 10);        // (x,y)
+  display.println(WiFi.localIP()); // Text or value to print
   display.setCursor(0, 30);
   display.println(rgbDisplay());
-  display.display();  // Print everything we set previously
+  display.display(); // Print everything we set previously
 }
 
-void setup() {
+void setup()
+{
   serialInit();
   displayInit();
   ledInit();
@@ -320,7 +328,8 @@ void setup() {
   connectAndServeHTTP();
 }
 
-void loop() {
+void loop()
+{
   // io.run(); is required for all sketches.
   // it should always be present at the top of your loop
   // function. it keeps the client connected to
