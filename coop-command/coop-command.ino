@@ -246,7 +246,7 @@ void handleGetLEDs()
 
 void handleNotFound()
 {
-  String message = "File Not Found\n\n";
+  String message = "Not Found\n\n";
   message += "URI: ";
   message += server.uri();
   message += "\nMethod: ";
