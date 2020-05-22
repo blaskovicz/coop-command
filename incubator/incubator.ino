@@ -10,10 +10,11 @@
 #include <Fonts/FreeMono9pt7b.h>
 #include <Fonts/Picopixel.h>
 
-// #include <Adafruit_Sensor.h>
-// #include <DHT.h>
-// #include <DHT_U.h>
-// #include <dht_nonblocking.h>
+#include <Adafruit_Si7021.h>
+
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+#include <DHT_U.h>
 
 #include "env.h"
 
@@ -32,9 +33,10 @@ static const uint8_t _D10 = 1;
 // set up the sensor
 // needs A0 since the esp8266 has only one analog input
 #define TEMP_PIN 0
-// #define DHT_SENSOR_PIN 14
-// DHT_Unified dht(DHT_SENSOR_PIN, DHT11);
-// DHT_nonblocking dht(DHT_SENSOR_PIN, DHT_TYPE_11);
+#define DHT_SENSOR_PIN 14
+DHT_Unified dht(DHT_SENSOR_PIN, DHT22);
+
+Adafruit_Si7021 si7021 = Adafruit_Si7021();
 
 // create instance of oled display
 Adafruit_SSD1306 display(128, 64);
@@ -49,8 +51,16 @@ AdafruitIO_WiFi io(ENV_AIO_USERNAME, ENV_AIO_KEY, ENV_WIFI_SSID, ENV_WIFI_PASS);
 AdafruitIO_Feed *temperature = io.feed("incubator.temperature");
 AdafruitIO_Feed *humidity = io.feed("incubator.humidity");
 
-float lastHumidity = -1;
-float lastTemperature = -1;
+struct tempAndHumidity
+{
+  float temperature;
+  float humidity;
+} averageTH, dhtTH, thermistorTH, si7021TH;
+const int thArrayLength = 4;
+tempAndHumidity *thArray[thArrayLength] = {&averageTH, &dhtTH, &thermistorTH, &si7021TH};
+String thNames[thArrayLength] = {String("Average"), String("DHT22"), String("Thermistor"), String("SI7021")};
+
+unsigned long int lastReportedMillis = -1;
 unsigned long int lastUpdatedMillis = -1;
 
 void connectAdafruitIO()
@@ -76,12 +86,9 @@ void displayInit()
   delay(100); // This delay is needed to let the display to initialize
 
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C); // Initialize display with the I2C address of 0x3C
-
-  display.clearDisplay(); // Clear the buffer
-
-  display.setTextColor(WHITE); // Set color of the text
-
-  display.setRotation(0); // Set orientation. Goes from 0, 1, 2 or 3
+  display.clearDisplay();                    // Clear the buffer
+  display.setTextColor(WHITE);               // Set color of the text
+  display.setRotation(0);                    // Set orientation. Goes from 0, 1, 2 or 3
 
   //display.setTextWrap(false);  // By default, long lines of text are set to automatically “wrap” back to the leftmost column.
   // To override this behavior (so text will run off the right side of the display - useful for
@@ -106,8 +113,8 @@ void serialInit()
 
 void sensorInit()
 {
-  // analogReference
-  // dht.begin();
+  dht.begin();
+  si7021.begin();
 }
 
 const char *indexPage = R""""(
@@ -116,14 +123,8 @@ const char *indexPage = R""""(
     <title>Coop Command</title>
     <script src="https://cdn.jsdelivr.net/npm/vue@2.5.17/dist/vue.js"></script>
     <style>
-      .led {
-        display: inline-block;
-        width: 50px;
-        height: 50px;
-        margin-left: 10px;
-        border: 1px solid #000;
-        border-radius: 2px;
-        vertical-align: middle;
+      .appWrapper {
+        display: none;
       }
       .error {
         color: #ea1717;
@@ -133,10 +134,12 @@ const char *indexPage = R""""(
   <body>
     <div id='app'>
       <h1>Incubator Command</h1>
-      <h2 v-if="error" class="error">An error occurred fetching data: <pre>{{error}}</pre></h2>
-      <div v-if="!error">
-        <h2>Temperature: {{temperatureDisplay}}</h2>
-        <h2>Humidity: {{humidityDisplay}}</h2>
+      <div class='appWrapper' ref='appWrapper'>
+        <h2 v-if="error" class="error">An error occurred fetching data: <pre>{{error}}</pre></h2>
+        <div v-if="!error">
+          <h2>Temperature: {{temperatureDisplay}}</h2>
+          <h2>Humidity: {{humidityDisplay}}</h2>
+        </div>
       </div>
     </div>
 
@@ -144,7 +147,15 @@ const char *indexPage = R""""(
       new Vue({
         el: '#app',
         async created() {
+          this.fetchState = this.fetchState.bind(this);
           await this.fetchState();
+          this.fetcher = window.setInterval(this.fetchState, 5000);
+        },
+        mounted() {
+          this.$refs.appWrapper.style.display = 'inherit';          
+        },
+        beforeDestroy() {
+          window.clearInterval(this.fetcher);
         },
         methods: {
           async fetchState() {
@@ -183,8 +194,8 @@ void handleRoot()
 
 void handleGetDHT()
 {
-  String lastTemperatureString = lastTemperature < 0 ? String("null") : String(lastTemperature);
-  String lastHumidityString = lastHumidity < 0 ? String("null") : String(lastHumidity);
+  String lastTemperatureString = isnan(averageTH.temperature) || averageTH.temperature < 0 ? String("null") : String(averageTH.temperature);
+  String lastHumidityString = isnan(averageTH.humidity) || averageTH.humidity < 0 ? String("null") : String(averageTH.humidity);
   server.send(200, "application/json", "{\"temperature\": " + lastTemperatureString + ", \"humidity\": " + lastHumidityString + "}");
 }
 
@@ -249,42 +260,48 @@ void connectAndServeHTTP()
   Serial.println(WiFi.localIP());
 }
 
-String temperatureDisplay()
+String temperatureDisplay(tempAndHumidity th)
 {
-  return String("T: ") + (lastTemperature >= 0 ? String(lastTemperature) + String(" F") : String("--"));
+  return String("T: ") + (!isnan(th.temperature) && th.temperature > 0 ? String(th.temperature) + String("F") : String("--"));
 }
 
-String humidityDisplay()
+String humidityDisplay(tempAndHumidity th)
 {
-  return String("H: ") + (lastHumidity >= 0 ? String(lastHumidity) + String(" %") : String("--"));
+  return String("H: ") + (!isnan(th.humidity) && th.humidity > 0 ? String(th.humidity) + String("%") : String("--"));
 }
 
-void updateDHTValues()
+float readDHTTemp()
 {
-  // wait at least 5 seconds between updates
-  unsigned long int nowMs = millis();
-  if (lastUpdatedMillis > 0 && (nowMs - lastUpdatedMillis) < 5000)
-  {
-    return;
-  }
+  sensors_event_t event;
+  dht.temperature().getEvent(&event);
 
-  lastUpdatedMillis = nowMs;
+  float newCelsius = event.temperature;
+  float newFahrenheit = (newCelsius * 1.8) + 32;
 
-  // float newCelsius;
-  // float newHumidity;
+  return newFahrenheit;
+}
 
-  // if (!dht.measure(&newCelsius, &newHumidity))
-  // {
-  //     return;
-  // }
+float readDHTHumidity()
+{
+  sensors_event_t event;
+  dht.humidity().getEvent(&event);
+  float newHumidity = event.relative_humidity;
 
-  // sensors_event_t event;
+  return newHumidity;
+}
 
-  // dht.temperature().getEvent(&event);
+float readSi7021Temp()
+{
+  return si7021.readTemperature() * 1.8 + 32;
+}
 
-  // float newCelsius = event.temperature;
-  // float newFahrenheit = (newCelsius * 1.8) + 32;
+float readSi7021Humidity()
+{
+  return si7021.readHumidity();
+}
 
+float readThermistorTemp()
+{
   float newFahrenheit;
   int samples = 10;
   for (int i = 0; i < samples; i++)
@@ -299,40 +316,117 @@ void updateDHTValues()
     delay(10);
   }
 
-  newFahrenheit = newFahrenheit / samples;
+  return newFahrenheit / samples;
+}
 
-  if (lastTemperature != newFahrenheit)
+void updateDHTValues()
+{
+  // wait at least 1 second between reads
+  unsigned long int nowMs = millis();
+  if (lastUpdatedMillis > 0 && (nowMs - lastUpdatedMillis) < 1000)
   {
-    lastTemperature = newFahrenheit;
-    Serial.println(temperatureDisplay());
-    temperature->save(newFahrenheit);
+    return;
   }
 
-  // dht.humidity().getEvent(&event);
+  lastUpdatedMillis = nowMs;
 
-  // newHumidity = event.relative_humidity;
+  dhtTH.humidity = readDHTHumidity();
+  si7021TH.humidity = readSi7021Humidity();
 
-  // if (lastHumidity != newHumidity)
-  // {
-  //     lastHumidity = newHumidity;
-  //     Serial.println(humidityDisplay());
-  //     humidity->save(newHumidity);
-  // }
+  dhtTH.temperature = readDHTTemp();
+  si7021TH.temperature = readSi7021Temp();
+  thermistorTH.temperature = readThermistorTemp();
+
+  // average
+  float averageCountTemp = 0.0;
+  float averageCountHumidity = 0.0;
+  float averageSumTemp = 0.0;
+  float averageSumHumidity = 0.0;
+
+  for (int i = 1; i < thArrayLength; i++)
+  {
+    String sensorName = thNames[i];
+    tempAndHumidity *sensorTH = thArray[i];
+
+    if (!isnan(sensorTH->temperature) && sensorTH->temperature > 0)
+    {
+      averageCountTemp += 1;
+      averageSumTemp += sensorTH->temperature;
+    }
+    else
+    {
+      Serial.println(String("Ignoring temperature ") + String(sensorTH->temperature) + String(" for ") + String(sensorName));
+    }
+
+    if (!isnan(sensorTH->humidity) && sensorTH->humidity > 0)
+    {
+      averageCountHumidity += 1;
+      averageSumHumidity += sensorTH->humidity;
+    }
+    else
+    {
+      Serial.println(String("Ignoring humidity ") + String(sensorTH->humidity) + String(" for ") + String(sensorName));
+    }
+  }
+
+  if (averageCountTemp > 0)
+  {
+    averageTH.temperature = averageSumTemp / averageCountTemp;
+  }
+  if (averageCountHumidity > 0)
+  {
+    averageTH.humidity = averageSumHumidity / averageCountHumidity;
+  }
+
+  // wait at least 30 seconds to report
+  if (lastReportedMillis > 0 && (nowMs - lastReportedMillis) < 30000)
+  {
+    return;
+  }
+
+  lastReportedMillis = nowMs;
+
+  if (!isnan(averageTH.temperature) && averageTH.temperature > 0)
+  {
+    Serial.println(String("Reporting ") + temperatureDisplay(averageTH));
+    temperature->save(averageTH.temperature);
+  }
+
+  if (!isnan(averageTH.humidity))
+  {
+    Serial.println(String("Reporting ") + humidityDisplay(averageTH));
+    humidity->save(averageTH.humidity);
+  }
 }
 
 void renderDisplay()
 {
-  display.clearDisplay();          // Clear the display so we can refresh
-  display.setFont(&Picopixel);     // Set a custom font
-  display.setTextSize(0);          // Set text size. We are using a custom font so you should always use the text size of 0
-  display.setCursor(0, 10);        // (x,y)
-  display.println(WiFi.localIP()); // Text or value to print
-  display.setCursor(0, 30);
-  display.setFont(&FreeMono9pt7b); // Set a custom font
-  display.println(temperatureDisplay());
-  display.setCursor(0, 50);
-  display.println(humidityDisplay());
-  display.display(); // Print everything we set previously
+  for (int i = 0; i < thArrayLength; i++)
+  {
+    delay(2000);
+
+    // updated models and maybe report
+    updateDHTValues();
+
+    tempAndHumidity *sensorTH = thArray[i];
+    String sensorName = thNames[i];
+
+    display.clearDisplay();          // Clear the display so we can refresh
+    display.setFont(&Picopixel);     // Set a custom font
+    display.setTextSize(0);          // Set text size. We are using a custom font so you should always use the text size of 0
+    display.setCursor(0, 10);        // (x,y)
+    display.println(WiFi.localIP()); // Text or value to print
+    display.setFont(&FreeMono9pt7b);
+    display.setCursor(0, 30);
+    display.println(sensorName);
+    display.setCursor(0, 45);
+    display.println(temperatureDisplay(*sensorTH));
+    display.setCursor(0, 60);
+    display.println(humidityDisplay(*sensorTH));
+    display.display(); // Print everything we set previously
+
+    delay(2000);
+  }
 }
 
 void setup()
@@ -353,15 +447,12 @@ void loop()
   // io.adafruit.com, and processes any incoming data.
   io.run();
 
-  // read DHT
-  updateDHTValues();
-
   // handle incoming http clients
   server.handleClient();
 
   // update local dns, just in case
   MDNS.update();
 
-  // update oled display
+  // update oled display and fetch values
   renderDisplay();
 }
