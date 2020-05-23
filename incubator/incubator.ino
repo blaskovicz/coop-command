@@ -399,11 +399,46 @@ void updateDHTValues()
   }
 }
 
+void backgroundTasks()
+{
+  // io.run(); is required for all sketches.
+  // it should always be present at the top of your loop
+  // function. it keeps the client connected to
+  // io.adafruit.com, and processes any incoming data.
+  io.run();
+
+  // handle incoming http clients
+  server.handleClient();
+
+  // update local dns, just in case
+  MDNS.update();
+}
+
+// sleep 20 ms at a time, performing background tasks in between
+// this is needed due to the single-threaded nature of arduino and the necessity
+// of some foreground tasks to function as intended
+// (like updating displays and waiting for N seconds in between)
+const unsigned long delayBucketMs = 20;
+void delayWithBackgroundTasks(unsigned long ms)
+{
+  if (ms < delayBucketMs)
+  {
+    ms = delayBucketMs;
+  }
+
+  while (ms > 0)
+  {
+    ms -= delayBucketMs;
+    backgroundTasks();
+    delay(delayBucketMs);
+  }
+}
+
 void renderDisplay()
 {
   for (int i = 0; i < thArrayLength; i++)
   {
-    delay(2000);
+    delayWithBackgroundTasks(2000);
 
     // updated models and maybe report
     updateDHTValues();
@@ -425,7 +460,7 @@ void renderDisplay()
     display.println(humidityDisplay(*sensorTH));
     display.display(); // Print everything we set previously
 
-    delay(2000);
+    delayWithBackgroundTasks(2000);
   }
 }
 
@@ -441,17 +476,7 @@ void setup()
 
 void loop()
 {
-  // io.run(); is required for all sketches.
-  // it should always be present at the top of your loop
-  // function. it keeps the client connected to
-  // io.adafruit.com, and processes any incoming data.
-  io.run();
-
-  // handle incoming http clients
-  server.handleClient();
-
-  // update local dns, just in case
-  MDNS.update();
+  backgroundTasks();
 
   // update oled display and fetch values
   renderDisplay();
