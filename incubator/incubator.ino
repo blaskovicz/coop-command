@@ -17,6 +17,7 @@
 #include <DHT_U.h>
 
 #include "env.h"
+#include "incubator-site-html.h"
 
 static const uint8_t _D0 = 16;
 static const uint8_t _D1 = 5;
@@ -116,76 +117,6 @@ void sensorInit()
   dht.begin();
   si7021.begin();
 }
-
-const char *indexPage = R""""(
-<html>
-  <head>
-    <title>Coop Command</title>
-    <script src="https://cdn.jsdelivr.net/npm/vue@2.5.17/dist/vue.js"></script>
-    <style>
-      .appWrapper {
-        display: none;
-      }
-      .error {
-        color: #ea1717;
-      }
-    </style>
-  </head>
-  <body>
-    <div id='app'>
-      <h1>Incubator Command</h1>
-      <div class='appWrapper' ref='appWrapper'>
-        <h2 v-if="error" class="error">An error occurred fetching data: <pre>{{error}}</pre></h2>
-        <div v-if="!error">
-          <h2>Temperature: {{temperatureDisplay}}</h2>
-          <h2>Humidity: {{humidityDisplay}}</h2>
-        </div>
-      </div>
-    </div>
-
-    <script>
-      new Vue({
-        el: '#app',
-        async created() {
-          this.fetchState = this.fetchState.bind(this);
-          await this.fetchState();
-          this.fetcher = window.setInterval(this.fetchState, 5000);
-        },
-        mounted() {
-          this.$refs.appWrapper.style.display = 'inherit';          
-        },
-        beforeDestroy() {
-          window.clearInterval(this.fetcher);
-        },
-        methods: {
-          async fetchState() {
-            const resp = await fetch('/api/dht');
-            if (!resp.ok) {
-              this.error = resp.statusText;
-            }
-            const data = await resp.json();
-            this.temperature = data.temperature;
-            this.humidity = data.humidity;
-          },
-        },
-        computed: {
-            temperatureDisplay() {
-                return this.temperature !== null ? `${this.temperature} F` : '--';
-            },
-            humidityDisplay() {
-                return this.humidity !== null ? `${this.humidity} %` : '--';
-            }
-        },
-        data: {
-          error: null,
-          temperature: null,
-          humidity: null,
-        },
-      });
-    </script>
-  </body>
-</html>
-)"""";
 
 void handleRoot()
 {
