@@ -17,7 +17,7 @@
 #include <DHT_U.h>
 
 #include "env.h"
-#include "incubator-site-html.h"
+#include "site-html.h"
 
 static const uint8_t _D0 = 16;
 static const uint8_t _D1 = 5;
@@ -120,7 +120,7 @@ void sensorInit()
 
 void handleRoot()
 {
-  server.send(200, "text/html", indexPage);
+  server.send(200, "text/html", siteHtml);
 }
 
 void handleGetDHT()

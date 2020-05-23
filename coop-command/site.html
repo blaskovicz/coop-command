@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-    <title>Incubator Command</title>
+    <title>Coop Command</title>
     <script src="https://cdn.jsdelivr.net/npm/vue@2.5.17/dist/vue.js"></script>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700|Material+Icons">
     <link rel="stylesheet"
@@ -13,26 +13,32 @@
             display: none;
         }
 
-        .error {
-            color: #ea1717;
+        .led {
+            display: inline-block;
+            width: 50px;
+            height: 50px;
+            margin-left: 10px;
+            border: 1px solid #000;
+            border-radius: 2px;
+            vertical-align: middle;
         }
 
-        .loading {
-            color: '#00f'
+        .error {
+            color: #ea1717;
         }
     </style>
 </head>
 
 <body>
     <div id='app'>
-        <h1 :class="fetching ? 'loading' : ''">Incubator Command</h1>
+        <h1>Coop Command</h1>
         <div class='appWrapper' ref='appWrapper'>
             <h2 v-if="error" class="error">An error occurred fetching data:
                 <pre>{{error}}</pre>
             </h2>
             <div v-if="!error">
-                <h2>Temperature: {{temperatureDisplay}}</h2>
-                <h2>Humidity: {{humidityDisplay}}</h2>
+                <h2>LED Status: {{ledStatus}} <div class="led" :style="ledStyle"></div>
+                </h2>
             </div>
         </div>
     </div>
@@ -60,15 +66,11 @@
                     this.fetching = true;
 
                     try {
-                        const resp = await fetch('/api/dht');
+                        const resp = await fetch('/api/leds');
                         if (!resp.ok) {
                             this.error = resp.statusText;
-                        } else {
-                            const data = await resp.json();
-                            this.temperature = data.temperature;
-                            this.humidity = data.humidity;
-                            this.error = null;
                         }
+                        this.led = await resp.json();
                     } catch (err) {
                         this.error = err.toString();
                     } finally {
@@ -77,18 +79,22 @@
                 },
             },
             computed: {
-                temperatureDisplay() {
-                    return this.temperature !== null ? `${this.temperature} F` : '--';
+                ledStyle() {
+                    return { 'background-color': `rgb(${this.led.r}, ${this.led.g}, ${this.led.b})` };
                 },
-                humidityDisplay() {
-                    return this.humidity !== null ? `${this.humidity} %` : '--';
-                }
+                ledStatus() {
+                    const sum = this.led.r + this.led.g + this.led.b;
+                    return sum === 0 ? 'off' : 'on';
+                },
             },
             data: {
                 fetching: false,
                 error: null,
-                temperature: null,
-                humidity: null,
+                led: {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                },
             },
         });
     </script>

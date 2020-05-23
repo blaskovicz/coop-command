@@ -1,2 +1,8 @@
+# env header file per project
 env.h
-incubator/incubator-site-html.h
+
+# site html, generated during prebuild
+**/*-html.h
+
+# shared libraries, copied during prebuild
+**/shared-lib-*.h

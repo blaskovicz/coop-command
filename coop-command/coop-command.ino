@@ -11,6 +11,7 @@
 #include <Fonts/FreeMono9pt7b.h>      // Add a custom font
 
 #include "env.h"
+#include "site-html.h"
 
 static const uint8_t _D0 = 16;
 static const uint8_t _D1 = 5;
@@ -138,76 +139,9 @@ void serialInit()
   Serial.println();
 }
 
-const char *indexPage = R""""(
-<html>
-  <head>
-    <title>Coop Command</title>
-    <script src="https://cdn.jsdelivr.net/npm/vue@2.5.17/dist/vue.js"></script>
-    <style>
-      .led {
-        display: inline-block;
-        width: 50px;
-        height: 50px;
-        margin-left: 10px;
-        border: 1px solid #000;
-        border-radius: 2px;
-        vertical-align: middle;
-      }
-      .error {
-        color: #ea1717;
-      }
-    </style>
-  </head>
-  <body>
-    <div id='app'>
-      <h1>Coop Command</h1>
-      <h2 v-if="error" class="error">An error occurred fetching data: <pre>{{error}}</pre></h2>
-      <div v-if="!error">
-        <h2>LED Status: {{ledStatus}} <div class="led" :style="ledStyle"></div></h2>
-      </div>
-    </div>
-
-    <script>
-      new Vue({
-        el: '#app',
-        async created() {
-          await this.fetchLEDState();
-        },
-        methods: {
-          async fetchLEDState() {
-            const resp = await fetch('/api/leds');
-            if (!resp.ok) {
-              this.error = resp.statusText;
-            }
-            this.led = await resp.json();
-          },
-        },
-        computed: {
-          ledStyle() {
-            return { 'background-color': `rgb(${this.led.r}, ${this.led.g}, ${this.led.b})` };
-          },
-          ledStatus() {
-            const sum = this.led.r + this.led.g + this.led.b;
-            return sum === 0 ? 'off' : 'on';
-          },
-        },
-        data: {
-          error: null,
-          led: {
-            r: 0,
-            g: 0,
-            b: 0,
-          },
-        },
-      });
-    </script>
-  </body>
-</html>
-)"""";
-
 void handleRoot()
 {
-  server.send(200, "text/html", indexPage);
+  server.send(200, "text/html", siteHtml);
 }
 
 void handleGetLEDs()
@@ -215,34 +149,6 @@ void handleGetLEDs()
   // TODO: caching reads
   server.send(200, "application/json", "{\"r\": " + String(lastRed) + ", \"g\": " + String(lastGreen) + ", \"b\": " + String(lastBlue) + "}");
 }
-
-// void handlePlain() {
-//   if (server.method() != HTTP_POST) {
-//     digitalWrite(led, 1);
-//     server.send(405, "text/plain", "Method Not Allowed");
-//     digitalWrite(led, 0);
-//   } else {
-//     digitalWrite(led, 1);
-//     server.send(200, "text/plain", "POST body was:\n" + server.arg("plain"));
-//     digitalWrite(led, 0);
-//   }
-// }
-
-// void handleForm() {
-//   if (server.method() != HTTP_POST) {
-//     digitalWrite(led, 1);
-//     server.send(405, "text/plain", "Method Not Allowed");
-//     digitalWrite(led, 0);
-//   } else {
-//     digitalWrite(led, 1);
-//     String message = "POST form was:\n";
-//     for (uint8_t i = 0; i < server.args(); i++) {
-//       message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-//     }
-//     server.send(200, "text/plain", message);
-//     digitalWrite(led, 0);
-//   }
-// }
 
 void handleNotFound()
 {
@@ -295,8 +201,6 @@ void connectAndServeHTTP()
   // mount server routes
   server.on("/", handleRoot);
   server.on("/api/leds", handleGetLEDs);
-  // server.on("/postplain/", handlePlain);
-  // server.on("/postform/", handleForm);
   server.onNotFound(handleNotFound);
 
   // start server
