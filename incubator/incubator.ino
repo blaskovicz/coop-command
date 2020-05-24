@@ -18,6 +18,8 @@
 
 #include "env.h"
 #include "site-html.h"
+#include "shared-lib-ota.h"
+#include "shared-lib-background-tasks.h"
 
 // set up the sensor
 // needs A0 since the esp8266 has only one analog input
@@ -292,9 +294,18 @@ void updateDHTValues()
   {
     averageTH.temperature = averageSumTemp / averageCountTemp;
   }
+  else
+  {
+    averageTH.temperature = NAN;
+  }
+
   if (averageCountHumidity > 0)
   {
     averageTH.humidity = averageSumHumidity / averageCountHumidity;
+  }
+  else
+  {
+    averageTH.humidity = NAN;
   }
 
   // wait at least 30 seconds to report
@@ -315,43 +326,6 @@ void updateDHTValues()
   {
     Serial.println(String("Reporting ") + humidityDisplay(averageTH));
     humidity->save(averageTH.humidity);
-  }
-}
-
-void backgroundTasks()
-{
-  // io.run(); is required for all sketches.
-  // it should always be present at the top of your loop
-  // function. it keeps the client connected to
-  // io.adafruit.com, and processes any incoming data.
-  io.run();
-
-  // handle incoming http clients
-  server.handleClient();
-
-  // update local dns, just in case
-  MDNS.update();
-
-  handleOTA();
-}
-
-// sleep 20 ms at a time, performing background tasks in between
-// this is needed due to the single-threaded nature of arduino and the necessity
-// of some foreground tasks to function as intended
-// (like updating displays and waiting for N seconds in between)
-const unsigned long delayBucketMs = 20;
-void delayWithBackgroundTasks(unsigned long ms)
-{
-  if (ms < delayBucketMs)
-  {
-    ms = delayBucketMs;
-  }
-
-  while (ms > 0)
-  {
-    ms -= delayBucketMs;
-    backgroundTasks();
-    delay(delayBucketMs);
   }
 }
 
@@ -393,6 +367,20 @@ void setup()
   connectAdafruitIO();
   otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
   connectAndServeHTTP();
+
+  // keep our client connected to
+  // io.adafruit.com, and processes any incoming data.
+  registerBackgroundTask([]() { io.run(); });
+
+  // handle incoming http clients
+  registerBackgroundTask([]() { server.handleClient(); });
+
+  // update local dns, just in case
+  registerBackgroundTask([]() { MDNS.update(); });
+
+  // check if we have ota updates
+  registerBackgroundTask([]() { handleOTA(); });
+
   // TODO make a buzz on speaker if temp or humidty is out of range for too long
 }
 

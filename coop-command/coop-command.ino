@@ -14,6 +14,7 @@
 #include "site-html.h"
 #include "shared-lib-esp8266-pinout.h"
 #include "shared-lib-ota.h"
+#include "shared-lib-background-tasks.h"
 
 const int pinBlue = _D7;
 const int pinGreen = _D5;
@@ -221,26 +222,27 @@ void setup()
   connectAdafruitIO();
   otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
   connectAndServeHTTP();
+
+  // keep our client connected to
+  // io.adafruit.com, and processes any incoming data.
+  registerBackgroundTask([]() { io.run(); });
+
+  // handle incoming http clients
+  registerBackgroundTask([]() { server.handleClient(); });
+
+  // update local dns, just in case
+  registerBackgroundTask([]() { MDNS.update(); });
+
+  // update oled display
+  registerBackgroundTask([]() { renderDisplay(); });
+
+  // check if we have ota updates
+  registerBackgroundTask([]() { handleOTA(); });
 }
 
 void loop()
 {
-  // io.run(); is required for all sketches.
-  // it should always be present at the top of your loop
-  // function. it keeps the client connected to
-  // io.adafruit.com, and processes any incoming data.
-  io.run();
-
-  // handle incoming http clients
-  server.handleClient();
-
-  // update local dns, just in case
-  MDNS.update();
-
-  // update oled display
-  renderDisplay();
-
-  handleOTA();
+  backgroundTasks();
 }
 
 // TODO: bootstrap AP with network vvv
