@@ -46,10 +46,10 @@ struct tempAndHumidity
 {
   float temperature;
   float humidity;
-} averageTH, dhtTH, thermistorTH, si7021TH;
-const int thArrayLength = 4;
-tempAndHumidity *thArray[thArrayLength] = {&averageTH, &dhtTH, &thermistorTH, &si7021TH};
-String thNames[thArrayLength] = {String("Average"), String("DHT22"), String("Thermistor"), String("SI7021")};
+} averageTH, dhtTH, si7021TH;
+const int thArrayLength = 3;
+tempAndHumidity *thArray[thArrayLength] = {&averageTH, &dhtTH, &si7021TH};
+String thNames[thArrayLength] = {String("Average"), String("DHT22"), String("SI7021")};
 
 unsigned long int lastReportedMillis = -1;
 unsigned long int lastUpdatedMillis = -1;
@@ -221,25 +221,6 @@ float readSi7021Humidity()
   return si7021.readHumidity();
 }
 
-float readThermistorTemp()
-{
-  float newFahrenheit;
-  int samples = 10;
-  for (int i = 0; i < samples; i++)
-  {
-    int tempReading = analogRead(TEMP_PIN);
-    double newKelvin = log(10000.0 * ((1024.0 / tempReading - 1)));
-    newKelvin = 1 / (0.001129148 + (0.000234125 + (0.0000000876741 * newKelvin * newKelvin)) * newKelvin);
-    float newCelsius = newKelvin - 273.15;
-    float newFahrenheitL = (newCelsius * 9.0) / 5.0 + 32.0;
-
-    newFahrenheit = newFahrenheit + newFahrenheitL;
-    delay(10);
-  }
-
-  return newFahrenheit / samples;
-}
-
 void updateDHTValues()
 {
   // wait at least 1 second between reads
@@ -256,7 +237,6 @@ void updateDHTValues()
 
   dhtTH.temperature = readDHTTemp();
   si7021TH.temperature = readSi7021Temp();
-  thermistorTH.temperature = readThermistorTemp();
 
   // average
   float averageCountTemp = 0.0;
