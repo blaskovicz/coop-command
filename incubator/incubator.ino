@@ -160,10 +160,10 @@ void connectAndServeHTTP()
 {
   connectWifiClient();
 
-  // start local dns server (coop-command.local)
-  if (MDNS.begin("incubator-command"))
+  // start local dns server (incubator.local)
+  if (MDNS.begin(ENV_HOSTNAME))
   {
-    Serial.println("MDNS responder started");
+    Serial.printf("MDNS responder started for %s.local\n", ENV_HOSTNAME);
   }
 
   // mount server routes
@@ -331,6 +331,8 @@ void backgroundTasks()
 
   // update local dns, just in case
   MDNS.update();
+
+  handleOTA();
 }
 
 // sleep 20 ms at a time, performing background tasks in between
@@ -389,6 +391,7 @@ void setup()
   displayInit();
   sensorInit();
   connectAdafruitIO();
+  otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
   connectAndServeHTTP();
   // TODO make a buzz on speaker if temp or humidty is out of range for too long
 }

@@ -13,6 +13,7 @@
 #include "env.h"
 #include "site-html.h"
 #include "shared-lib-esp8266-pinout.h"
+#include "shared-lib-ota.h"
 
 const int pinBlue = _D7;
 const int pinGreen = _D5;
@@ -182,9 +183,9 @@ void connectAndServeHTTP()
   connectWifiClient();
 
   // start local dns server (coop-command.local)
-  if (MDNS.begin("coop-command"))
+  if (MDNS.begin(ENV_HOSTNAME))
   {
-    Serial.println("MDNS responder started");
+    Serial.printf("MDNS responder started for %s.local\n", ENV_HOSTNAME);
   }
 
   // mount server routes
@@ -218,6 +219,7 @@ void setup()
   displayInit();
   ledInit();
   connectAdafruitIO();
+  otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
   connectAndServeHTTP();
 }
 
@@ -237,10 +239,9 @@ void loop()
 
   // update oled display
   renderDisplay();
-}
 
-// TODO: OTA updates vvv
-// https://github.com/esp8266/Arduino/blob/master/libraries/ESP8266WebServer/examples/WebUpdate/WebUpdate.ino
+  handleOTA();
+}
 
 // TODO: bootstrap AP with network vvv
 /*
