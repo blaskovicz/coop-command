@@ -20,10 +20,12 @@
 #include "site-html.h"
 #include "shared-lib-ota.h"
 #include "shared-lib-background-tasks.h"
+#include "shared-lib-dht-utils.h"
 
 // set up the sensor
 // needs A0 since the esp8266 has only one analog input
-#define TEMP_PIN 0
+// #define TEMP_PIN 0
+
 #define DHT_SENSOR_PIN 14
 DHT_Unified dht(DHT_SENSOR_PIN, DHT22);
 
@@ -42,11 +44,7 @@ AdafruitIO_WiFi io(ENV_AIO_USERNAME, ENV_AIO_KEY, ENV_WIFI_SSID, ENV_WIFI_PASS);
 AdafruitIO_Feed *temperature = io.feed("incubator.temperature");
 AdafruitIO_Feed *humidity = io.feed("incubator.humidity");
 
-struct tempAndHumidity
-{
-  float temperature;
-  float humidity;
-} averageTH, dhtTH, si7021TH;
+tempAndHumidity averageTH, dhtTH, si7021TH;
 const int thArrayLength = 3;
 tempAndHumidity *thArray[thArrayLength] = {&averageTH, &dhtTH, &si7021TH};
 String thNames[thArrayLength] = {String("Average"), String("DHT22"), String("SI7021")};
@@ -181,36 +179,6 @@ void connectAndServeHTTP()
   Serial.println(WiFi.localIP());
 }
 
-String temperatureDisplay(tempAndHumidity th)
-{
-  return String("T: ") + (!isnan(th.temperature) && th.temperature > 0 ? String(th.temperature) + String("F") : String("--"));
-}
-
-String humidityDisplay(tempAndHumidity th)
-{
-  return String("H: ") + (!isnan(th.humidity) && th.humidity > 0 ? String(th.humidity) + String("%") : String("--"));
-}
-
-float readDHTTemp()
-{
-  sensors_event_t event;
-  dht.temperature().getEvent(&event);
-
-  float newCelsius = event.temperature;
-  float newFahrenheit = (newCelsius * 1.8) + 32;
-
-  return newFahrenheit;
-}
-
-float readDHTHumidity()
-{
-  sensors_event_t event;
-  dht.humidity().getEvent(&event);
-  float newHumidity = event.relative_humidity;
-
-  return newHumidity;
-}
-
 float readSi7021Temp()
 {
   return si7021.readTemperature() * 1.8 + 32;
@@ -232,10 +200,10 @@ void updateDHTValues()
 
   lastUpdatedMillis = nowMs;
 
-  dhtTH.humidity = readDHTHumidity();
+  dhtTH.humidity = readDHTHumidity(&dht);
   si7021TH.humidity = readSi7021Humidity();
 
-  dhtTH.temperature = readDHTTemp();
+  dhtTH.temperature = readDHTTemp(&dht);
   si7021TH.temperature = readSi7021Temp();
 
   // average
@@ -315,9 +283,6 @@ void renderDisplay()
   {
     delayWithBackgroundTasks(2000);
 
-    // updated models and maybe report
-    updateDHTValues();
-
     tempAndHumidity *sensorTH = thArray[i];
     String sensorName = thNames[i];
 
@@ -351,6 +316,9 @@ void setup()
   // keep our client connected to
   // io.adafruit.com, and processes any incoming data.
   registerBackgroundTask([]() { io.run(); });
+
+  // read temperature and humidity, report
+  registerBackgroundTask([]() { updateDHTValues(); });
 
   // handle incoming http clients
   registerBackgroundTask([]() { server.handleClient(); });
