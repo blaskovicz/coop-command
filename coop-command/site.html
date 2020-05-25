@@ -39,6 +39,8 @@
             <div v-if="!error">
                 <h2>LED Status: {{ledStatus}} <div class="led" :style="ledStyle"></div>
                 </h2>
+                <h2>Temperature: {{temperatureDisplay}}</h2>
+                <h2>Humidity: {{humidityDisplay}}</h2>
             </div>
         </div>
     </div>
@@ -66,11 +68,21 @@
                     this.fetching = true;
 
                     try {
-                        const resp = await fetch('/api/leds');
+                        const [resp, resp2] = [await fetch('/api/leds'), await fetch('/api/dht')];
                         if (!resp.ok) {
                             this.error = resp.statusText;
+                        } else {
+                            this.led = await resp.json();
                         }
-                        this.led = await resp.json();
+
+                        if (!resp2.ok) {
+                            this.error = resp2.statusText;
+                        } else {
+                            const data = await resp2.json();
+                            this.temperature = data.temperature;
+                            this.humidity = data.humidity;
+                            this.error = null;
+                        }
                     } catch (err) {
                         this.error = err.toString();
                     } finally {
@@ -86,6 +98,12 @@
                     const sum = this.led.r + this.led.g + this.led.b;
                     return sum === 0 ? 'off' : 'on';
                 },
+                temperatureDisplay() {
+                    return this.temperature !== null ? `${this.temperature} F` : '--';
+                },
+                humidityDisplay() {
+                    return this.humidity !== null ? `${this.humidity} %` : '--';
+                }
             },
             data: {
                 fetching: false,
@@ -95,6 +113,8 @@
                     g: 0,
                     b: 0,
                 },
+                temperature: null,
+                humidity: null,
             },
         });
     </script>
