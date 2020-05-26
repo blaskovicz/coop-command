@@ -39,23 +39,25 @@ void registerBackgroundTask(taskFunction func)
     }
 }
 
-// sleep 10 ms at a time, performing background tasks in between
+// sleep small ms inc at a time, performing background tasks in between
 // this is needed due to the single-threaded nature of arduino and the necessity
 // of some foreground tasks to function as intended
 // (like updating displays and waiting for N seconds in between)
-const unsigned long delayBucketMs = 10;
+const unsigned long delayBucketMs = 20;
 void delayWithBackgroundTasks(unsigned long ms)
 {
-    if (ms < delayBucketMs)
+    unsigned long int totalWaitMs = 0;
+    do
     {
-        ms = delayBucketMs;
-    }
-
-    while (ms > 0)
-    {
-        ms -= delayBucketMs;
+        unsigned long taskStart = millis();
         backgroundTasks();
-        delay(delayBucketMs);
-    }
+        totalWaitMs += millis() - taskStart;
+
+        if (totalWaitMs < ms)
+        {
+            delay(delayBucketMs);
+            totalWaitMs += delayBucketMs;
+        }
+    } while (totalWaitMs < ms);
 }
 #endif
