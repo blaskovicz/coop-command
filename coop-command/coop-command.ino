@@ -23,7 +23,7 @@
 DHT_Unified dht(_D4, DHT22);
 tempAndHumidity dhtTH;
 
-const int pinButtonOnOff = _D3;
+// const int pinButtonOnOff = _D3;
 
 const int pinBlue = _D7;
 const int pinGreen = _D5;
@@ -31,6 +31,9 @@ const int pinRed = _D6;
 
 unsigned long int lastReportedMillis = -1;
 unsigned long int lastUpdatedMillis = -1;
+// unsigned long int lastPressedMillis = -1;
+// unsigned long int buttonPressedTimes = 0;
+// bool buttonDisabled = false;
 
 // create instance of oled display
 // Adafruit_SSD1306 display(128, 64);
@@ -311,38 +314,61 @@ void updateDHTValues()
   }
 }
 
-void buttonInit()
-{
-  pinMode(pinButtonOnOff, INPUT);
-}
+// void buttonInit()
+// {
+//   pinMode(pinButtonOnOff, INPUT);
+// }
 
-void readButton()
-{
-  int buttonState = digitalRead(pinButtonOnOff);
-  if (buttonState != HIGH)
-  {
-    return;
-  }
+// void readButton()
+// {
+//   // incorrect wiring
+//   if (buttonDisabled)
+//   {
+//     return;
+//   }
 
-  Serial.println("[button] pressed");
+//   int buttonState = digitalRead(pinButtonOnOff);
+//   if (buttonState != HIGH)
+//   {
+//     return;
+//   }
 
-  // we will receive the adafruit message, but do this for instant feedback
-  ledsOn = !ledsOn;
-  updateLEDs();
+//   // wait at least 0.5 seconds between reads
+//   unsigned long int nowMs = millis();
+//   if (lastPressedMillis > 0 && (nowMs - lastPressedMillis) < 500)
+//   {
+//     buttonPressedTimes++;
+//     return;
+//   }
 
-  String publishValue = String(ledsOn ? "ON" : "OFF");
-  bool published = ledOnOffFeed->save(publishValue);
+//   if (buttonPressedTimes > 4)
+//   {
+//     buttonDisabled = true;
+//     Serial.println("[button] pressed 4 times in 500ms, disabling");
+//     return;
+//   }
 
-  if (published)
-  {
-    Serial.print("[button] published");
-  }
-  else
-  {
-    Serial.print("[button] failed to publish");
-  }
-  Serial.println(" " + publishValue + " to " + String(ledOnOffFeed->name));
-}
+//   lastPressedMillis = nowMs;
+//   buttonPressedTimes = 0;
+//   Serial.println("[button] pressed");
+
+//   // we will receive the adafruit message, but do this for instant feedback
+//   ledsOn = !ledsOn;
+//   updateLEDs();
+
+//   String publishValue = String(ledsOn ? "ON" : "OFF");
+//   bool published = ledOnOffFeed->save(publishValue);
+
+//   if (published)
+//   {
+//     Serial.print("[button] published");
+//   }
+//   else
+//   {
+//     Serial.print("[button] failed to publish");
+//   }
+//   Serial.println(" " + publishValue + " to " + String(ledOnOffFeed->name));
+// }
 
 void sensorInit()
 {
@@ -351,7 +377,7 @@ void sensorInit()
 
 void setup()
 {
-  buttonInit();
+  // buttonInit();
   serialInit();
   // displayInit();
   sensorInit();
@@ -368,7 +394,7 @@ void setup()
   registerBackgroundTask([]() { updateDHTValues(); });
 
   // read button
-  registerBackgroundTask([]() { readButton(); });
+  // registerBackgroundTask([]() { readButton(); });
 
   // handle incoming http clients
   registerBackgroundTask([]() { server.handleClient(); });
