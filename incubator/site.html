@@ -33,6 +33,7 @@
             <div v-if="!error">
                 <h2>Temperature: {{temperatureDisplay}}</h2>
                 <h2>Humidity: {{humidityDisplay}}</h2>
+                <h2>As Of: {{as_of}}</h2>
             </div>
         </div>
     </div>
@@ -67,6 +68,7 @@
                             const data = await resp.json();
                             this.temperature = data.temperature;
                             this.humidity = data.humidity;
+                            this.as_of = data.as_of;
                             this.error = null;
                         }
                     } catch (err) {
@@ -82,13 +84,14 @@
                 },
                 humidityDisplay() {
                     return this.humidity !== null ? `${this.humidity} %` : '--';
-                }
+                },
             },
             data: {
                 fetching: false,
                 error: null,
                 temperature: null,
                 humidity: null,
+                as_of: '--',
             },
         });
     </script>

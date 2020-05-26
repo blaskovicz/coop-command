@@ -16,15 +16,21 @@
 #include <DHT.h>
 #include <DHT_U.h>
 
+#include <NTPClient.h>
+#include <WiFiUdp.h>
+
 #include "env.h"
 #include "site-html.h"
 #include "shared-lib-ota.h"
+#include "shared-lib-blink.h"
 #include "shared-lib-background-tasks.h"
 #include "shared-lib-dht-utils.h"
 
-// set up the sensor
-// needs A0 since the esp8266 has only one analog input
-// #define TEMP_PIN 0
+WiFiUDP ntpUDP;
+
+// By default 'pool.ntp.org' is used with 60 seconds update interval and
+// no offset; use New_York epoch seconds offset
+NTPClient timeClient(ntpUDP, -14400);
 
 #define DHT_SENSOR_PIN 14
 DHT_Unified dht(DHT_SENSOR_PIN, DHT22);
@@ -51,11 +57,12 @@ String thNames[thArrayLength] = {String("Average"), String("DHT22"), String("SI7
 
 unsigned long int lastReportedMillis = -1;
 unsigned long int lastUpdatedMillis = -1;
+String lastUpdated;
 
 void connectAdafruitIO()
 {
   // connect to io.adafruit.com
-  Serial.print("Connecting to Adafruit IO");
+  Serial.print("[adafruit] connecting to Adafruit IO");
   io.connect();
 
   // wait for a connection
@@ -67,6 +74,7 @@ void connectAdafruitIO()
 
   // we are connected
   Serial.println();
+  Serial.print("[adafruit] ");
   Serial.println(io.statusText());
 }
 
@@ -115,7 +123,7 @@ void handleGetDHT()
 {
   String lastTemperatureString = isnan(averageTH.temperature) || averageTH.temperature < 0 ? String("null") : String(averageTH.temperature);
   String lastHumidityString = isnan(averageTH.humidity) || averageTH.humidity < 0 ? String("null") : String(averageTH.humidity);
-  server.send(200, "application/json", "{\"temperature\": " + lastTemperatureString + ", \"humidity\": " + lastHumidityString + "}");
+  server.send(200, "application/json", "{\"temperature\": " + lastTemperatureString + ", \"humidity\": " + lastHumidityString + ", \"as_of\": \"" + lastUpdated + "\"}");
 }
 
 void handleNotFound()
@@ -138,9 +146,7 @@ void handleNotFound()
 void connectWifiClient()
 {
   // Connect to WiFi network
-  Serial.println();
-  Serial.println();
-  Serial.print(F("Connecting to "));
+  Serial.print("[wifi] connecting to ");
   Serial.println(ENV_WIFI_SSID);
   Serial.flush();
 
@@ -153,7 +159,9 @@ void connectWifiClient()
     Serial.print(F("."));
   }
   Serial.println();
-  Serial.println(F("WiFi connected"));
+
+  Serial.print("[wifi] connected");
+  Serial.println(WiFi.localIP());
 }
 
 void connectAndServeHTTP()
@@ -163,7 +171,7 @@ void connectAndServeHTTP()
   // start local dns server (incubator.local)
   if (MDNS.begin(ENV_HOSTNAME))
   {
-    Serial.printf("MDNS responder started for %s.local\n", ENV_HOSTNAME);
+    Serial.printf("[wifi] MDNS responder started for %s.local\n", ENV_HOSTNAME);
   }
 
   // mount server routes
@@ -173,10 +181,7 @@ void connectAndServeHTTP()
 
   // start server
   server.begin();
-  Serial.println(F("Server started"));
-
-  // Print the IP address
-  Serial.println(WiFi.localIP());
+  Serial.println("[http] server started");
 }
 
 float readSi7021Temp()
@@ -224,7 +229,7 @@ void updateDHTValues()
     }
     else
     {
-      Serial.println(String("Ignoring temperature ") + String(sensorTH->temperature) + String(" for ") + String(sensorName));
+      Serial.println(String("[update-dht-values] ignoring temperature ") + String(sensorTH->temperature) + String(" for ") + String(sensorName));
     }
 
     if (!isnan(sensorTH->humidity) && sensorTH->humidity > 0)
@@ -234,11 +239,11 @@ void updateDHTValues()
     }
     else
     {
-      Serial.println(String("Ignoring humidity ") + String(sensorTH->humidity) + String(" for ") + String(sensorName));
+      Serial.println(String("[update-dht-values] ignoring humidity ") + String(sensorTH->humidity) + String(" for ") + String(sensorName));
     }
   }
 
-  if (averageCountTemp > 0)
+  if (averageCountTemp > 0.0)
   {
     averageTH.temperature = averageSumTemp / averageCountTemp;
   }
@@ -247,7 +252,7 @@ void updateDHTValues()
     averageTH.temperature = NAN;
   }
 
-  if (averageCountHumidity > 0)
+  if (averageCountHumidity > 0.0)
   {
     averageTH.humidity = averageSumHumidity / averageCountHumidity;
   }
@@ -255,6 +260,8 @@ void updateDHTValues()
   {
     averageTH.humidity = NAN;
   }
+
+  lastUpdated = timeClient.getFormattedTime();
 
   // wait at least 30 seconds to report
   if (lastReportedMillis > 0 && (nowMs - lastReportedMillis) < 30000)
@@ -266,13 +273,13 @@ void updateDHTValues()
 
   if (!isnan(averageTH.temperature) && averageTH.temperature > 0)
   {
-    Serial.println(String("Reporting ") + temperatureDisplay(averageTH));
+    Serial.println(String("[update-dht-values] reporting ") + temperatureDisplay(averageTH));
     temperature->save(averageTH.temperature);
   }
 
   if (!isnan(averageTH.humidity))
   {
-    Serial.println(String("Reporting ") + humidityDisplay(averageTH));
+    Serial.println(String("[update-dht-values] reporting ") + humidityDisplay(averageTH));
     humidity->save(averageTH.humidity);
   }
 }
@@ -286,11 +293,14 @@ void renderDisplay()
     tempAndHumidity *sensorTH = thArray[i];
     String sensorName = thNames[i];
 
-    display.clearDisplay();          // Clear the display so we can refresh
-    display.setFont(&Picopixel);     // Set a custom font
-    display.setTextSize(0);          // Set text size. We are using a custom font so you should always use the text size of 0
-    display.setCursor(0, 10);        // (x,y)
-    display.println(WiFi.localIP()); // Text or value to print
+    Serial.println("[render] " + sensorName);
+    display.clearDisplay();        // Clear the display so we can refresh
+    display.setFont(&Picopixel);   // Set a custom font
+    display.setTextSize(0);        // Set text size. We are using a custom font so you should always use the text size of 0
+    display.setCursor(0, 10);      // (x,y)
+    display.print(WiFi.localIP()); // Text or value to print
+    display.print(" ");
+    display.println(lastUpdated);
     display.setFont(&FreeMono9pt7b);
     display.setCursor(0, 30);
     display.println(sensorName);
@@ -307,6 +317,7 @@ void renderDisplay()
 void setup()
 {
   serialInit();
+  timeClient.begin();
   displayInit();
   sensorInit();
   connectAdafruitIO();
@@ -329,7 +340,10 @@ void setup()
   // check if we have ota updates
   registerBackgroundTask([]() { handleOTA(); });
 
+  registerBackgroundTask([]() { timeClient.update(); });
+
   // TODO make a buzz on speaker if temp or humidty is out of range for too long
+  blink();
 }
 
 void loop()
