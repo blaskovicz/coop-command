@@ -1,6 +1,9 @@
 #ifndef ESP8266_PINOUT_H
 #define ESP8266_PINOUT_H
 
+static const uint8_t LED_BUILTIN = 16;
+#define LED_BUILTIN 16
+
 static const uint8_t _D0 = 16;
 static const uint8_t _D1 = 5;
 static const uint8_t _D2 = 4;
