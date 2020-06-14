@@ -34,6 +34,7 @@
                 <h2>Temperature: {{temperatureDisplay}}</h2>
                 <h2>Humidity: {{humidityDisplay}}</h2>
                 <h2>As Of: {{as_of}}</h2>
+                <h2>Sensors: {{sensors}}</h2>
             </div>
         </div>
     </div>
@@ -69,6 +70,7 @@
                             this.temperature = data.temperature;
                             this.humidity = data.humidity;
                             this.as_of = data.as_of;
+                            this.sensors = data.sensors;
                             this.error = null;
                         }
                     } catch (err) {
@@ -92,6 +94,7 @@
                 temperature: null,
                 humidity: null,
                 as_of: '--',
+                sensors: 0
             },
         });
     </script>

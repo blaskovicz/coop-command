@@ -12,6 +12,8 @@
 
 #include <Adafruit_Si7021.h>
 
+#include <Adafruit_SHT31.h>
+
 #include <Adafruit_Sensor.h>
 #include <DHT.h>
 #include <DHT_U.h>
@@ -38,6 +40,8 @@ DHT_Unified dht(DHT_SENSOR_PIN, DHT22);
 
 Adafruit_Si7021 si7021 = Adafruit_Si7021();
 
+Adafruit_SHT31 sht31 = Adafruit_SHT31();
+
 // create instance of oled display
 Adafruit_SSD1306 display(128, 64);
 
@@ -51,14 +55,14 @@ AdafruitIO_WiFi io(ENV_AIO_USERNAME, ENV_AIO_KEY, ENV_WIFI_SSID, ENV_WIFI_PASS);
 AdafruitIO_Feed *temperature = io.feed("incubator.temperature");
 AdafruitIO_Feed *humidity = io.feed("incubator.humidity");
 
-tempAndHumidity averageTH, dhtTH, si7021TH;
-const int thArrayLength = 3;
-tempAndHumidity *thArray[thArrayLength] = {&averageTH, &dhtTH, &si7021TH};
-String thNames[thArrayLength] = {String("Average"), String("DHT22"), String("SI7021")};
+int sensorsReporting = 0;
+tempAndHumidity averageTH, dhtTH, si7021TH, sht31TH;
+const int thArrayLength = 4;
+tempAndHumidity *thArray[thArrayLength] = {&averageTH, &dhtTH, &si7021TH, &sht31TH};
+String thNames[thArrayLength] = {String("Average"), String("DHT22"), String("SI7021"), String("SHT31D")};
 
 unsigned long int lastReportedMillis = -1;
 unsigned long int lastUpdatedMillis = -1;
-String lastUpdated;
 
 void connectAdafruitIO()
 {
@@ -98,8 +102,12 @@ void displayInit()
 
 void sensorInit()
 {
+  // TODO: check out using heater on si7021 and sht31 for more accurate results when it's above 80%
+  // https://www.silabs.com/community/sensors/forum.topic.html/humidity_sensor_on-c-bl7t
+
   dht.begin();
   si7021.begin();
+  sht31.begin();
 }
 
 void handleRoot()
@@ -111,7 +119,8 @@ void handleGetDHT()
 {
   String lastTemperatureString = isnan(averageTH.temperature) || averageTH.temperature < 0 ? String("null") : String(averageTH.temperature);
   String lastHumidityString = isnan(averageTH.humidity) || averageTH.humidity < 0 ? String("null") : String(averageTH.humidity);
-  server.send(200, "application/json", "{\"temperature\": " + lastTemperatureString + ", \"humidity\": " + lastHumidityString + ", \"as_of\": \"" + lastUpdated + "\"}");
+  String sensors = String(sensorsReporting, 10);
+  server.send(200, "application/json", "{\"temperature\": " + lastTemperatureString + ", \"humidity\": " + lastHumidityString + ", \"as_of\": \"" + averageTH.lastUpdated + "\", \"sensors\": " + sensors + "}");
 }
 
 void handleNotFound()
@@ -182,6 +191,16 @@ float readSi7021Humidity()
   return si7021.readHumidity();
 }
 
+float readSht31Temp()
+{
+  return sht31.readTemperature() * 1.8 + 32;
+}
+
+float readSht31Humidity()
+{
+  return sht31.readHumidity();
+}
+
 void updateDHTValues()
 {
   // wait at least 1 second between reads
@@ -195,20 +214,24 @@ void updateDHTValues()
 
   dhtTH.humidity = readDHTHumidity(&dht);
   si7021TH.humidity = readSi7021Humidity();
+  sht31TH.humidity = readSht31Humidity();
 
   dhtTH.temperature = readDHTTemp(&dht);
   si7021TH.temperature = readSi7021Temp();
+  sht31TH.temperature = readSht31Temp();
 
   // average
   float averageCountTemp = 0.0;
   float averageCountHumidity = 0.0;
   float averageSumTemp = 0.0;
   float averageSumHumidity = 0.0;
+  int lSensorsReporting = 0;
 
   for (int i = 1; i < thArrayLength; i++)
   {
     String sensorName = thNames[i];
     tempAndHumidity *sensorTH = thArray[i];
+    bool goodSensor = true;
 
     if (!isnan(sensorTH->temperature) && sensorTH->temperature > 0)
     {
@@ -217,6 +240,7 @@ void updateDHTValues()
     }
     else
     {
+      goodSensor = false;
       Serial.println(String("[update-dht-values] ignoring temperature ") + String(sensorTH->temperature) + String(" for ") + String(sensorName));
     }
 
@@ -227,10 +251,19 @@ void updateDHTValues()
     }
     else
     {
+      goodSensor = false;
       Serial.println(String("[update-dht-values] ignoring humidity ") + String(sensorTH->humidity) + String(" for ") + String(sensorName));
+    }
+
+    if (goodSensor)
+    {
+      sensorTH->lastUpdated = timeClient.getFormattedTime();
+      lSensorsReporting++;
     }
   }
 
+  sensorsReporting = lSensorsReporting;
+  bool goodAverage = true;
   if (averageCountTemp > 0.0)
   {
     averageTH.temperature = averageSumTemp / averageCountTemp;
@@ -238,6 +271,7 @@ void updateDHTValues()
   else
   {
     averageTH.temperature = NAN;
+    goodAverage = false;
   }
 
   if (averageCountHumidity > 0.0)
@@ -247,9 +281,13 @@ void updateDHTValues()
   else
   {
     averageTH.humidity = NAN;
+    goodAverage = false;
   }
 
-  lastUpdated = timeClient.getFormattedTime();
+  if (goodAverage)
+  {
+    averageTH.lastUpdated = timeClient.getFormattedTime();
+  }
 
   // wait at least 30 seconds to report
   if (lastReportedMillis > 0 && (nowMs - lastReportedMillis) < 30000)
@@ -272,6 +310,19 @@ void updateDHTValues()
   }
 }
 
+void resetDisplay()
+{
+  display.clearDisplay();        // Clear the display so we can refresh
+  display.setFont(&Picopixel);   // Set a custom font
+  display.setTextSize(0);        // Set text size. We are using a custom font so you should always use the text size of 0
+  display.setCursor(0, 10);      // (x,y)
+  display.print(WiFi.localIP()); // Text or value to print
+  display.print(" ");
+  display.println(timeClient.getFormattedTime());
+  display.setFont(&FreeMono9pt7b);
+  display.setCursor(0, 30);
+}
+
 void renderDisplay()
 {
   for (int i = 0; i < thArrayLength; i++)
@@ -282,21 +333,29 @@ void renderDisplay()
     String sensorName = thNames[i];
 
     Serial.println("[render] " + sensorName);
-    display.clearDisplay();        // Clear the display so we can refresh
-    display.setFont(&Picopixel);   // Set a custom font
-    display.setTextSize(0);        // Set text size. We are using a custom font so you should always use the text size of 0
-    display.setCursor(0, 10);      // (x,y)
-    display.print(WiFi.localIP()); // Text or value to print
-    display.print(" ");
-    display.println(lastUpdated);
-    display.setFont(&FreeMono9pt7b);
-    display.setCursor(0, 30);
+
+    resetDisplay();
+
     display.println(sensorName);
     display.setCursor(0, 45);
     display.println(temperatureDisplay(*sensorTH));
     display.setCursor(0, 60);
     display.println(humidityDisplay(*sensorTH));
     display.display(); // Print everything we set previously
+
+    delayWithBackgroundTasks(4000);
+
+    resetDisplay();
+
+    display.println(sensorName);
+    display.setCursor(0, 45);
+
+    display.print("U: ");
+    display.println(sensorTH->lastUpdated);
+    display.setCursor(0, 60);
+    display.print("N: ");
+    display.println(timeClient.getFormattedTime());
+    display.display();
 
     delayWithBackgroundTasks(2000);
   }

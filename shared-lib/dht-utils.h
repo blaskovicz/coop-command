@@ -9,6 +9,7 @@ struct tempAndHumidity
 {
     float temperature;
     float humidity;
+    String lastUpdated;
 };
 
 float readDHTTemp(DHT_Unified *dht)
