@@ -25,6 +25,7 @@
 #include "shared-lib-blink.h"
 #include "shared-lib-background-tasks.h"
 #include "shared-lib-dht-utils.h"
+#include "shared-lib-serial.h"
 
 WiFiUDP ntpUDP;
 
@@ -93,19 +94,6 @@ void displayInit()
   // with setTextWrap(true).
 
   display.dim(0); //Set brightness (0 is maximun and 1 is a little dim)
-}
-
-void serialInit()
-{
-  // set up serial monitor and wait for it to open
-  Serial.begin(9600);
-
-  do
-  {
-    delay(100);
-  } while (!Serial);
-
-  Serial.println();
 }
 
 void sensorInit()
