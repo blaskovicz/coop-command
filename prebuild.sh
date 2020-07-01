@@ -7,7 +7,7 @@ steps=3
 
 # step 1, clean
 echo "[1/$steps - Clean]"
-rm -vf $DIR/*/shared-lib-*.h \
+rm -f $DIR/*/shared-lib-*.h \
        $DIR/*/*-html.h |& sed 's/^/  /g'
 
 # step 2, create all html assets as importable headers
@@ -25,7 +25,7 @@ for html_file in $DIR/*/*.html; do
     file_contents=$(cat $html_file)
     header_file_path=$html_file_dir/$header_file.h
 
-    echo "  $header_file_path <- $html_file"
+    #echo "  $header_file_path <- $html_file"
 
     cat > $header_file_path <<EOT
 #ifndef $header_guard_def_name
@@ -57,7 +57,7 @@ for shared_lib_file in $DIR/shared-lib/*.h; do
 
         shared_lib_target=$project_dir/shared-lib-$shared_lib_file_basename
 
-        echo "  $shared_lib_target <- $shared_lib_file"
+        #echo "  $shared_lib_target <- $shared_lib_file"
         cp $shared_lib_file $shared_lib_target
     done
 done
