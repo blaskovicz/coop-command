@@ -185,8 +185,8 @@ void handleRoot()
 
 void handleGetLEDs()
 {
-  // TODO: caching reads
-  server.send(200, "application/json", "{\"r\": " + String(lastRed) + ", \"g\": " + String(lastGreen) + ", \"b\": " + String(lastBlue) + "}");
+  String ledsOnString = ledsOn ? String("true") : String("false");
+  server.send(200, "application/json", "{\"r\": " + String(lastRed) + ", \"g\": " + String(lastGreen) + ", \"b\": " + String(lastBlue) + ", \"on\": " + String(ledsOnString) + "}");
 }
 
 void handleGetDHT()

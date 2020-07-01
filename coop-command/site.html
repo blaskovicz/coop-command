@@ -95,8 +95,7 @@
                     return { 'background-color': `rgb(${this.led.r}, ${this.led.g}, ${this.led.b})` };
                 },
                 ledStatus() {
-                    const sum = this.led.r + this.led.g + this.led.b;
-                    return sum === 0 ? 'off' : 'on';
+                    return this.led.on ? 'on' : 'off';
                 },
                 temperatureDisplay() {
                     return this.temperature !== null ? `${this.temperature} F` : '--';
@@ -112,6 +111,7 @@
                     r: 0,
                     g: 0,
                     b: 0,
+                    on: false,
                 },
                 temperature: null,
                 humidity: null,
