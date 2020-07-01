@@ -387,6 +387,7 @@ void setup()
   // check if we have ota updates
   registerBackgroundTask([]() { handleOTA(); });
 
+  // update our ntp client
   registerBackgroundTask([]() { timeClient.update(); });
 
   // TODO make a buzz on speaker if temp or humidty is out of range for too long
