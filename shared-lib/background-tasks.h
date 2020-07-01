@@ -5,13 +5,18 @@ typedef void (*taskFunction)();
 
 int taskIndex = 0;
 int taskCap = 5;
-taskFunction *tasks = new taskFunction[taskCap];
+taskFunction *tasks = NULL;
 
 // a background task is just any book-keeping task that should be run
 // while we are executing a large delay that could otherwise block something
 // like an http request handler
 void backgroundTasks()
 {
+    if (tasks == NULL)
+    {
+        return;
+    }
+
     for (int i = 0; i < taskIndex; i++)
     {
         tasks[i]();
@@ -21,6 +26,11 @@ void backgroundTasks()
 // https://stackoverflow.com/a/31521586/626810
 void registerBackgroundTask(taskFunction func)
 {
+    if (tasks == NULL)
+    {
+        tasks = new taskFunction[taskCap];
+    }
+
     tasks[taskIndex] = func;
     taskIndex++;
 
