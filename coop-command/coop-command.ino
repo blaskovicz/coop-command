@@ -109,11 +109,11 @@ String rgbDisplay()
 
 void updateDoors()
 {
-  // _CW = opening = true
-  // _CCW = closing = false
+  // _CCW = opening = true
+  // _CW = closing = false
 
-  int door0Dir = door0 ? _CW : _CCW;
-  int door1Dir = door1 ? _CW : _CCW;
+  int door0Dir = door0 ? _CCW : _CW;
+  int door1Dir = door1 ? _CCW : _CW;
 
   _PRINT("[doors] ");
   _PRINT("door0 ");
