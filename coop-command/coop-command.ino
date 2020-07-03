@@ -659,34 +659,34 @@ void setup()
   LittleFS.begin();
   // displayInit();
   sensorInit();
-  // ledInit();
-  // doorInit();
-  // connectAdafruitIO();
-  // loadInitialState();
-  // otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
-  // connectAndServeHTTP();
+  ledInit();
+  doorInit();
+  connectAdafruitIO();
+  loadInitialState();
+  otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
+  connectAndServeHTTP();
 
-  // // keep our client connected to
-  // // io.adafruit.com, and processes any incoming data.
-  // registerBackgroundTask([]() { io.run(); });
+  // keep our client connected to
+  // io.adafruit.com, and processes any incoming data.
+  registerBackgroundTask([]() { io.run(); });
 
-  // // read temperature and humidity, report
-  // registerBackgroundTask([]() { updateDHTValues(); });
+  // read temperature and humidity, report
+  registerBackgroundTask([]() { updateDHTValues(); });
 
-  // // read button
-  // // registerBackgroundTask([]() { readButton(); });
+  // read button
+  // registerBackgroundTask([]() { readButton(); });
 
-  // // handle incoming http clients
-  // registerBackgroundTask([]() { server.handleClient(); });
+  // handle incoming http clients
+  registerBackgroundTask([]() { server.handleClient(); });
 
-  // // update local dns, just in case
-  // registerBackgroundTask([]() { MDNS.update(); });
+  // update local dns, just in case
+  registerBackgroundTask([]() { MDNS.update(); });
 
-  // // update oled display
-  // // registerBackgroundTask([]() { renderDisplay(); });
+  // update oled display
+  // registerBackgroundTask([]() { renderDisplay(); });
 
-  // // check if we have ota updates
-  // registerBackgroundTask([]() { handleOTA(); });
+  // check if we have ota updates
+  registerBackgroundTask([]() { handleOTA(); });
 }
 
 void loop()
