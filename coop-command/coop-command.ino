@@ -387,7 +387,7 @@ void handlePutLEDs()
   ledsOn = newOn;
 
   char buff[8];
-  sprintf(buff, "#%x%x%x", lastRed, lastGreen, lastBlue);
+  sprintf(buff, "#%02x%02x%02x", lastRed, lastGreen, lastBlue);
 
   debounceFeed += 2;
 
