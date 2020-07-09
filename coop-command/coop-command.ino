@@ -19,8 +19,6 @@
 
 #include <LittleFS.h>
 
-#define DEBUG_MODE
-
 #include "env.h"
 // #include "site-html.h"
 #include "shared-lib-esp8266-pinout.h"
@@ -300,8 +298,15 @@ void ledInit()
 
 void handleRoot()
 {
-  File f = LittleFS.open("/site.html", "r+");
+  File f = LittleFS.open("/site.html", "r");
+  if (!f)
+  {
+    handleNotFound();
+    return;
+  }
+
   server.streamFile(f, "text/html");
+  f.close();
   // int buffSize = 128;
   // char destBuff[buffSize + 1];
   // server.setContentLength(CONTENT_LENGTH_UNKNOWN);
@@ -471,8 +476,6 @@ void handleNotFound()
 void connectWifiClient()
 {
   // Connect to WiFi network
-  _PRINTLN();
-  _PRINTLN();
   _PRINT("[wifi] connecting to ");
   _PRINTLN(ENV_WIFI_SSID);
   _PRINT("[wifi] ");
@@ -664,6 +667,10 @@ void setup()
   connectAdafruitIO();
   loadInitialState();
   otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
+  registerOtaStartHook([]() {
+    stopBackgroundTasks();
+    LittleFS.end();
+  });
   connectAndServeHTTP();
 
   // keep our client connected to
@@ -687,6 +694,18 @@ void setup()
 
   // check if we have ota updates
   registerBackgroundTask([]() { handleOTA(); });
+
+  // Dir dir = LittleFS.openDir("/data");
+  // while (dir.next())
+  // {
+  //   Serial.print("[LittleFS] ");
+  //   Serial.print(dir.fileName());
+  //   if (dir.fileSize())
+  //   {
+  //     File f = dir.openFile("r");
+  //     Serial.println(f.size());
+  //   }
+  // }
 }
 
 void loop()

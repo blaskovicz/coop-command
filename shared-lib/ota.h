@@ -5,7 +5,20 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
-#include "shared-lib-blink.h"
+typedef void (*hookFunction)();
+hookFunction startHook = NULL;
+
+void registerOtaStartHook(hookFunction func)
+{
+    startHook = func;
+}
+
+void otaStartHook()
+{
+    if (startHook == NULL)
+        return;
+    startHook();
+}
 
 // based on the guide at
 // https://arduino-esp8266.readthedocs.io/en/latest/ota_updates/readme.html#arduino-ide
@@ -40,18 +53,16 @@ void otaInit(char *hostname = NULL, char *password = NULL)
 
         // NOTE: if updating FS this would be the place to unmount FS using FS.end()
         Serial.println("[ota] start updating " + type);
-        blink();
+        otaStartHook();
     });
     ArduinoOTA.onEnd([]() {
         Serial.println("[ota] end");
-        blink();
     });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
         Serial.printf("[ota] progress: %u%%\r", (progress / (total / 100)));
     });
     ArduinoOTA.onError([](ota_error_t error) {
         Serial.printf("[ota] error[%u]: ", error);
-        blink();
 
         if (error == OTA_AUTH_ERROR)
         {
@@ -72,6 +83,10 @@ void otaInit(char *hostname = NULL, char *password = NULL)
         else if (error == OTA_END_ERROR)
         {
             Serial.println("end failed");
+        }
+        else
+        {
+            Serial.println("<unknown>");
         }
     });
 

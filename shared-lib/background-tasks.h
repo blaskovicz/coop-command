@@ -6,19 +6,33 @@ typedef void (*taskFunction)();
 int taskIndex = 0;
 int taskCap = 5;
 taskFunction *tasks = NULL;
+bool stopped = false;
+
+void stopBackgroundTasks()
+{
+    stopped = true;
+}
+void resumeBackgroundTasks()
+{
+    stopped = false;
+}
 
 // a background task is just any book-keeping task that should be run
 // while we are executing a large delay that could otherwise block something
 // like an http request handler
 void backgroundTasks()
 {
-    if (tasks == NULL)
+    if (tasks == NULL || stopped)
     {
         return;
     }
 
     for (int i = 0; i < taskIndex; i++)
     {
+        if (stopped)
+        {
+            break;
+        }
         tasks[i]();
     }
 }
