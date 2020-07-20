@@ -5,12 +5,14 @@
 
 #define _PRINT(...) Serial.print(__VA_ARGS__)
 #define _PRINTLN(...) Serial.println(__VA_ARGS__)
+#define _PRINTF(...) Serial.printf(__VA_ARGS__)
 #define _FLUSH() Serial.flush()
 
 #else
 
 #define _PRINT(...)
 #define _PRINTLN(...)
+#define _PRINTF(...)
 #define _FLUSH(...)
 
 #endif
@@ -25,6 +27,7 @@ void serialInit()
         delay(100);
     } while (!Serial);
 
+    _PRINTLN();
     _PRINTLN("[serial] initialized");
 }
 

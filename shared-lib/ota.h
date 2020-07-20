@@ -5,6 +5,8 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
+#include "shared-lib-serial.h"
+
 typedef void (*hookFunction)();
 hookFunction startHook = NULL;
 
@@ -17,6 +19,7 @@ void otaStartHook()
 {
     if (startHook == NULL)
         return;
+
     startHook();
 }
 
@@ -52,47 +55,47 @@ void otaInit(char *hostname = NULL, char *password = NULL)
         }
 
         // NOTE: if updating FS this would be the place to unmount FS using FS.end()
-        Serial.println("[ota] start updating " + type);
+        _PRINTLN("[ota] start updating " + type);
         otaStartHook();
     });
     ArduinoOTA.onEnd([]() {
-        Serial.println("[ota] end");
+        _PRINTLN("[ota] end");
     });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        Serial.printf("[ota] progress: %u%%\r", (progress / (total / 100)));
+        _PRINTF("[ota] progress: %u%%\r", (progress / (total / 100)));
     });
     ArduinoOTA.onError([](ota_error_t error) {
-        Serial.printf("[ota] error[%u]: ", error);
+        _PRINTF("[ota] error[%u]: ", error);
 
         if (error == OTA_AUTH_ERROR)
         {
-            Serial.println("auth failed");
+            _PRINTLN("auth failed");
         }
         else if (error == OTA_BEGIN_ERROR)
         {
-            Serial.println("begin failed");
+            _PRINTLN("begin failed");
         }
         else if (error == OTA_CONNECT_ERROR)
         {
-            Serial.println("connect failed");
+            _PRINTLN("connect failed");
         }
         else if (error == OTA_RECEIVE_ERROR)
         {
-            Serial.println("receive failed");
+            _PRINTLN("receive failed");
         }
         else if (error == OTA_END_ERROR)
         {
-            Serial.println("end failed");
+            _PRINTLN("end failed");
         }
         else
         {
-            Serial.println("<unknown>");
+            _PRINTLN("<unknown>");
         }
     });
 
     ArduinoOTA.begin();
 
-    Serial.println("[ota] initalized");
+    _PRINTLN("[ota] initalized");
 }
 
 void handleOTA()
