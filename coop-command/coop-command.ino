@@ -56,6 +56,7 @@ ESP8266WebServer server(ENV_PORT);
 
 // Create an instance of Adafruit HTTP Api Client
 AdafruitIO_WiFi io(ENV_AIO_USERNAME, ENV_AIO_KEY, ENV_WIFI_SSID, ENV_WIFI_PASS);
+bool ioConnected = false;
 
 int lastRed = 0;
 int lastGreen = 0;
@@ -240,11 +241,15 @@ void connectAdafruitIO()
   door1Feed->onMessage(handleAdafruitMessage);
 
   // wait for a connection
-  while (io.status() < AIO_CONNECTED)
+  uint tries = 0;
+  while (io.status() < AIO_CONNECTED && tries < 10)
   {
     _PRINT(".");
     delay(500);
+    tries++;
   }
+
+  ioConnected = io.status() == AIO_CONNECTED || io.status() == AIO_CONNECTED_INSECURE;
 
   // we are connected
   _PRINTLN();
@@ -396,9 +401,12 @@ void handlePutLEDs()
 
   debounceFeed += 2;
 
-  ledFeed->save(buff);
-  // for some reason, no matter what I put here, I cannot send a raw string like "ON" or "OFF" and have it assemble in the API as anything other than 1
-  ledOnOffFeed->save(ledsOn);
+  if (ioConnected)
+  {
+    ledFeed->save(buff);
+    // for some reason, no matter what I put here, I cannot send a raw string like "ON" or "OFF" and have it assemble in the API as anything other than 1
+    ledOnOffFeed->save(ledsOn);
+  }
 
   _PRINTLN("[adafruit] led feeds updated");
 
@@ -427,8 +435,11 @@ void handlePutDoors()
 
   debounceFeed += 2;
 
-  door0Feed->save(door0);
-  door1Feed->save(door1);
+  if (ioConnected)
+  {
+    door0Feed->save(door0);
+    door1Feed->save(door1);
+  }
 
   _PRINTLN("[adafruit] door feeds updated");
 
@@ -487,7 +498,7 @@ void connectWifiClient()
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(500);
-    _PRINT(F("."));
+    _PRINT(".");
   }
 
   _PRINTLN();
@@ -558,14 +569,16 @@ void updateDHTValues()
   if (!isnan(dhtTH.temperature) && dhtTH.temperature > 0)
   {
     _PRINTLN(String("[dht] reporting ") + temperatureDisplay(dhtTH));
-    temperature->save(dhtTH.temperature);
+    if (ioConnected)
+      temperature->save(dhtTH.temperature);
     reported = true;
   }
 
   if (!isnan(dhtTH.humidity) && dhtTH.humidity > 0)
   {
     _PRINTLN(String("[dht] reporting ") + humidityDisplay(dhtTH));
-    humidity->save(dhtTH.humidity);
+    if (ioConnected)
+      humidity->save(dhtTH.humidity);
     reported = true;
   }
 
@@ -648,11 +661,21 @@ void doorInit()
 
 void loadInitialState()
 {
-  // get initial states
-  ledFeed->get();
-  ledOnOffFeed->get();
-  door0Feed->get();
-  door1Feed->get();
+  // initialize doors and led state; if our
+  // data-store (adafruit is available, use those values)
+  // otherwise, use our defaults (closed, off, respectively)
+  if (ioConnected)
+  {
+    ledFeed->get();
+    ledOnOffFeed->get();
+    door0Feed->get();
+    door1Feed->get();
+  }
+  else
+  {
+    updateDoors();
+    updateLEDs();
+  }
 }
 
 void setup()
@@ -675,7 +698,8 @@ void setup()
 
   // keep our client connected to
   // io.adafruit.com, and processes any incoming data.
-  registerBackgroundTask([]() { io.run(); });
+  if (ioConnected)
+    registerBackgroundTask([]() { io.run(); });
 
   // read temperature and humidity, report
   registerBackgroundTask([]() { updateDHTValues(); });
