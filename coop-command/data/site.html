@@ -220,6 +220,10 @@
 
                     try {
                         const [resp, resp2, resp3] = [await fetch('/api/leds'), await fetch('/api/dht'), await fetch('/api/doors')];
+                        if (this.editDoor || this.editLeds) {
+                            // could have changed since above
+                            return;
+                        }
                         if (!resp.ok) {
                             this.error = await resp.text();
                             return;

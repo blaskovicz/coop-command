@@ -13,10 +13,6 @@
             display: none;
         }
 
-        .error {
-            color: #ea1717;
-        }
-
         .loading {
             color: '#00f'
         }
@@ -27,9 +23,11 @@
     <div id='app'>
         <h1 :class="fetching ? 'loading' : ''">Driveway Command</h1>
         <div class='appWrapper' ref='appWrapper'>
-            <h2 v-if="error" class="error">An error occurred fetching data:
+            <v-alert type="error" v-if="error">
+                An error occurred fetching data:
                 <pre>{{error}}</pre>
-            </h2>
+            </v-alert>
+
             <div v-if="!error">
                 <h2>Last Notified: {{lastNotifiedDisplay}}</h2>
             </div>
