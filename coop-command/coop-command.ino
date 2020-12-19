@@ -123,12 +123,12 @@ void updateDoors()
   _PRINTLN(door1 ? "open" : "closed");
 
   // slow start
-  for (int pwm = 1; pwm <= 100; pwm++)
+  for (int pwm = 5; pwm <= 100;)
   {
     door0Motor.setmotor(door0Dir, pwm);
     door1Motor.setmotor(door1Dir, pwm);
-    delay(100);
-    // TODO, standby ?
+    delayWithBackgroundTasks(250);
+    pwm += 5;
   }
 
   // TODO eventually add our limit switch checking logic here
