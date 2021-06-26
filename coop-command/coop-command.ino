@@ -56,10 +56,12 @@ const String topicSuffix_door0 = "door0";
 const String topicSuffix_door1 = "door1";
 const String topicSuffix_door_open = "open";
 const String topicSuffix_led0 = "led0";
-const String topicSuffix_temp = "temp";
 const String topicSuffix_led_rgb = "rgb";
 const String topicSuffix_led_on = "on";
+const String topicSuffix_temp = "temp";
 const String topicSuffix_humid = "humid";
+int deferUpdateLEDs = 0;
+int deferUpdateDoors = 0;
 bool door0state = false;
 bool door1state = false;
 bool led0state = false;
@@ -140,6 +142,7 @@ void handleMQTTMessage(String &topic, String &payload)
   // cmd/coop_command/door0/open -> true, false
   // cmd/coop_command/led0/rgb -> FFFFFF, FEED00
   // cmd/coop_command/led0/on -> true, false
+  // stat/...
   String activeTopicPrefix = commandTopicPrefix;
   if (topic.indexOf(activeTopicPrefix) != 0)
   {
@@ -189,7 +192,7 @@ void handleMQTTMessage(String &topic, String &payload)
       led0state2 = true;
       if (!subscribedToState)
       {
-        updateLEDs();
+        deferUpdateLEDs++;
       }
     }
     else if (stateField == topicSuffix_led_on)
@@ -200,7 +203,7 @@ void handleMQTTMessage(String &topic, String &payload)
         led0state = true;
         if (!subscribedToState)
         {
-          updateLEDs();
+          deferUpdateLEDs++;
         }
       }
       else if (payload == falseString)
@@ -209,7 +212,7 @@ void handleMQTTMessage(String &topic, String &payload)
         led0state = true;
         if (!subscribedToState)
         {
-          updateLEDs();
+          deferUpdateLEDs++;
         }
       }
       else
@@ -247,7 +250,7 @@ void handleMQTTMessage(String &topic, String &payload)
 
       if (!subscribedToState)
       {
-        updateDoors();
+        deferUpdateDoors++;
       }
     }
     else
@@ -296,13 +299,20 @@ void wifiInit()
   WiFi.mode(WIFI_STA);
   WiFi.begin(ENV_WIFI_SSID, ENV_WIFI_PASS);
 
+  uint64 count = 0;
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(500);
-    _PRINT(".");
+    count++;
+
+    if (count % 20 == 0)
+    {
+      // every 10s
+      _PRINT(".");
+    }
   }
 
-  _PRINTLN();
+  _PRINTLN(".");
   _PRINT("[wifi] connected ");
   _PRINTLN(WiFi.localIP());
 
@@ -382,14 +392,31 @@ void mqttInit()
   _PRINT("[mqtt] ");
   _FLUSH();
 
-  client.setOptions(30, false, 5000);
+  // max time to go without a packet from client to broker.
+  // the underlying library should continue to call PINGREQ packets in client.loop().
+  client.setKeepAlive(240);
+
+  // persist session messages in case we disconnect and re-connect
+  client.setCleanSession(false);
+
+  // timeout for any command
+  client.setTimeout(5000);
+
   client.begin(ENV_MQTT_HOST, net);
 
   // connect with hostname as client_id, providing the configured username and password
+  uint64 count = 0;
   while (!client.connect(ENV_HOSTNAME, ENV_MQTT_USERNAME, ENV_MQTT_PASSWORD))
   {
     delay(500);
-    _PRINT(".");
+    count++;
+
+    if (count % 20 == 0)
+    {
+      // every 10s
+      _PRINT("...");
+      _PRINTLN(client.lastError());
+    }
   }
 
   _PRINTLN();
@@ -404,17 +431,34 @@ void previousMQTTStateInit()
   subscribedToState = true;
   client.subscribe(stateTopicPrefix + "#", 0);
 }
-void handlePreviousState()
+void handleQueuedState()
 {
-  // once we receive our initial state for all devices, update them and remove our
-  // state subscription so we can again publish updates to state
+
   if (subscribedToState && door0state && door1state && led0state && led0state2)
   {
+    // once we receive our initial state for all devices, update them and remove our
+    // state subscription so we can again publish updates to state
+
     _PRINTLN("[mqtt] initial state received for all devices");
     subscribedToState = false;
     client.unsubscribe(stateTopicPrefix + "#");
     updateLEDs();
     updateDoors();
+  }
+  else if (!subscribedToState)
+  {
+    // we cannot publish mqtt updates in the same callback as we receive them in,
+    // so we do it in a seperate function after said handler completes (client.loop -> handleMQTTMessage)
+    if (deferUpdateLEDs > 0)
+    {
+      deferUpdateLEDs--;
+      updateLEDs();
+    }
+    if (deferUpdateDoors > 0)
+    {
+      deferUpdateDoors--;
+      updateDoors();
+    }
   }
 }
 
@@ -434,9 +478,14 @@ void setup()
 
   // keep our mqtt subscription and handler active
   registerBackgroundTask([]() {
-    client.loop();
+    if (!client.loop())
+    {
+      _PRINT("[mqtt] loop error ");
+      _PRINTLN(client.lastError());
+    }
+    delay(10);
     mqttInit();
-    handlePreviousState();
+    handleQueuedState();
   });
 
   // read temperature and humidity, report
