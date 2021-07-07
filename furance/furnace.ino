@@ -10,9 +10,8 @@
 #include "shared-lib-background-tasks.h"
 #include "shared-lib-serial.h"
 
-unsigned long int lastReportedMillis = -1;
-unsigned long int lastUpdatedMillis = -1;
-unsigned int lastVlRange = -1;
+unsigned long int lastUpdatedMillis = 0;
+unsigned int lastVlRange = 0;
 
 WiFiClient net;
 MQTTClient client;
@@ -39,13 +38,12 @@ const String topicSuffix_fuelLevel = "fuel-test";
 unsigned int convertVlRange(unsigned int rangeInMM)
 {
   // assume we have a 330 gallon tank.
-  rangeInMM -= 12;
-  if (rangeInMM <= 0)
+  if (rangeInMM <= 12)
   {
     return 0;
   }
 
-  unsigned int gallonsRemaining = static_cast<unsigned int>(330.0 - (330.0 / (75.0 - 12.0) * rangeInMM));
+  unsigned int gallonsRemaining = static_cast<unsigned int>(330.0 - (330.0 / (75.0 - 12.0) * (rangeInMM - 12.0)));
   if (gallonsRemaining > 330)
   {
     return 330;
@@ -88,17 +86,47 @@ void wifiInit()
   }
 }
 
-void updateFuelLevel()
+bool readVL()
 {
-  // wait at least .5 second between reads
-  unsigned long int nowMs = millis();
-  if (lastUpdatedMillis > 0 && (nowMs - lastUpdatedMillis) < 500)
+  int times = 20;
+  int i;
+  uint8_t vlValue;
+  unsigned int vlSum = 0;
+  int successes = 0;
+  int de = 100;
+
+  _PRINTLN(String("[vl-sensor][")+String(millis())+String("] reading ") + String(times) + String("x"));
+  for (i = 0; i < times; i++)
   {
-    return;
+    delay(de);
+    vlValue = readVLSingle();
+    if (vlValue == 0)
+    {
+      continue;
+    }
+    successes++;
+    vlSum += vlValue;
   }
 
-  lastUpdatedMillis = nowMs;
+  // 50% must succeed
+  int expectedMin = times / 2;
+  if (successes < expectedMin)
+  {
+    _PRINTLN(String("[vl-sensor][")+String(millis())+String("] read threshold failed; expected at least ") + String(expectedMin) + String(", got ") + String(successes));
+    return false;
+  }
 
+  unsigned int previousVlRange = lastVlRange;
+  lastVlRange = vlSum / successes;
+  lastUpdatedMillis = millis();
+
+  _PRINTLN(String("[vl-sensor][")+String(millis())+String("] read ") + String(lastVlRange) + String(" (was ") + String(previousVlRange) + String(") from ") + String(successes) + String(" of ") + String(times) + String(" checks"));
+
+  return true;
+}
+
+uint8_t readVLSingle()
+{
   // float lux = vl.readLux(VL6180X_ALS_GAIN_5);
   // Serial.print("Lux: "); Serial.println(lux);
 
@@ -107,173 +135,176 @@ void updateFuelLevel()
 
   if (status == VL6180X_ERROR_NONE)
   {
-    lastVlRange = range;
+    return range;
+  }
+
+  // an error occurred, ignore this range
+  if ((status >= VL6180X_ERROR_SYSERR_1) && (status <= VL6180X_ERROR_SYSERR_5))
+  {
+    Serial.println("[vl-sensor] system error");
+  }
+  else if (status == VL6180X_ERROR_ECEFAIL)
+  {
+    Serial.println("[vl-sensor] ece failure");
+  }
+  else if (status == VL6180X_ERROR_NOCONVERGE)
+  {
+    Serial.println("[vl-sensor] no convergence");
+  }
+  else if (status == VL6180X_ERROR_RANGEIGNORE)
+  {
+    Serial.println("[vl-sensor] ignoring range");
+  }
+  else if (status == VL6180X_ERROR_SNR)
+  {
+    Serial.println("[vl-sensor] signal/noise error");
+  }
+  else if (status == VL6180X_ERROR_RAWUFLOW)
+  {
+    Serial.println("[vl-sensor] raw reading underflow");
+  }
+  else if (status == VL6180X_ERROR_RAWOFLOW)
+  {
+    Serial.println("[vl-sensor] raw reading overflow");
+  }
+  else if (status == VL6180X_ERROR_RANGEUFLOW)
+  {
+    Serial.println("[vl-sensor] range reading underflow");
+  }
+  else if (status == VL6180X_ERROR_RANGEOFLOW)
+  {
+    Serial.println("[vl-sensor] range reading overflow");
   }
   else
   {
-    // an error occurred, ignore this range
-    if ((status >= VL6180X_ERROR_SYSERR_1) && (status <= VL6180X_ERROR_SYSERR_5))
-    {
-      //    Serial.println("System error");
-    }
-    else if (status == VL6180X_ERROR_ECEFAIL)
-    {
-      //    Serial.println("ECE failure");
-    }
-    else if (status == VL6180X_ERROR_NOCONVERGE)
-    {
-      //    Serial.println("No convergence");
-    }
-    else if (status == VL6180X_ERROR_RANGEIGNORE)
-    {
-      //    Serial.println("Ignoring range");
-    }
-    else if (status == VL6180X_ERROR_SNR)
-    {
-      //    Serial.println("Signal/Noise error");
-    }
-    else if (status == VL6180X_ERROR_RAWUFLOW)
-    {
-      //    Serial.println("Raw reading underflow");
-    }
-    else if (status == VL6180X_ERROR_RAWOFLOW)
-    {
-      //    Serial.println("Raw reading overflow");
-    }
-    else if (status == VL6180X_ERROR_RANGEUFLOW)
-    {
-      //    Serial.println("Range reading underflow");
-    }
-    else if (status == VL6180X_ERROR_RANGEOFLOW)
-    {
-      //    Serial.println("Range reading overflow");
-    }
-    return;
+    Serial.println("[vl-sensor] unknown error");
   }
 
-  // wait at least 60 seconds to report
-  if (lastReportedMillis > 0 && (nowMs - lastReportedMillis) < 60000)
+  return 0;
+}
+
+const unsigned long int ONE_MINUTE_MS = 60000;
+void updateFuelLevel()
+{
+  // wait at least 30 min between reads
+  unsigned long int nowMs = millis();
+  if (
+    (lastUpdatedMillis > 0 && (nowMs - lastUpdatedMillis) < (30*ONE_MINUTE_MS)) ||
+    !readVL()
+  )
   {
     return;
   }
 
-  bool reported = false;
-
-  if (!isnan(lastVlRange) && lastVlRange >= 0)
+  if (lastVlRange > 0)
   {
     // convert to gallons left
     unsigned int gallonsRemaining = convertVlRange(lastVlRange);
-    _PRINTLN(String("[vl-sensor] reporting " + String(gallonsRemaining)));
+    _PRINTLN(String("[vl-sensor] reporting ") + String(gallonsRemaining));
     if (client.connected())
     {
       client.publish(stateTopicPrefix + topicSuffix_fuelLevel, String(gallonsRemaining), true, 2);
-      reported = true;
     }
-  }
-
-  if (reported)
-  {
-    lastReportedMillis = nowMs;
   }
 }
 
 void sensorInit()
 {
-  _PRINT("[vl-sensor] startup ");
-  uint64 count = 0;
-  while (!vlSensor.begin())
-  {
-    delay(500);
-    count++;
-
-    if (count % 20 == 0)
+    _PRINT("[vl-sensor] startup ");
+    uint64 count = 0;
+    while (!vlSensor.begin())
     {
-      // every 10s
-      _PRINT(".");
+      delay(500);
+      count++;
+
+      if (count % 20 == 0)
+      {
+        // every 10s
+        _PRINT(".");
+      }
     }
-  }
-  _PRINTLN();
-  _PRINTLN("[vl-sensor] started");
+    _PRINTLN();
+    _PRINTLN("[vl-sensor] started");
 }
 
 void mqttInit()
 {
-  if (client.connected())
-  {
-    return;
-  }
-
-  // Connect to WiFi network
-  _PRINT("[mqtt] connecting to ");
-  _PRINTLN(ENV_MQTT_HOST);
-  _PRINT("[mqtt] ");
-  _FLUSH();
-
-  // max time to go without a packet from client to broker.
-  // the underlying library should continue to call PINGREQ packets in client.loop().
-  client.setKeepAlive(240);
-
-  // persist session messages in case we disconnect and re-connect
-  client.setCleanSession(false);
-
-  // timeout for any command
-  client.setTimeout(5000);
-
-  client.begin(ENV_MQTT_HOST, net);
-
-  // connect with hostname as client_id, providing the configured username and password
-  uint64 count = 0;
-  while (!client.connect(ENV_HOSTNAME, ENV_MQTT_USERNAME, ENV_MQTT_PASSWORD))
-  {
-    delay(500);
-    count++;
-
-    if (count % 20 == 0)
+    if (client.connected())
     {
-      // every 10s
-      _PRINT("...");
-      _PRINTLN(client.lastError());
+      return;
     }
-  }
 
-  _PRINTLN();
-  _PRINTLN("[mqtt] connected ");
+    // Connect to WiFi network
+    _PRINT("[mqtt] connecting to ");
+    _PRINTLN(ENV_MQTT_HOST);
+    _PRINT("[mqtt] ");
+    _FLUSH();
+
+    // max time to go without a packet from client to broker.
+    // the underlying library should continue to call PINGREQ packets in client.loop().
+    client.setKeepAlive(240);
+
+    // persist session messages in case we disconnect and re-connect
+    client.setCleanSession(false);
+
+    // timeout for any command
+    client.setTimeout(5000);
+
+    client.begin(ENV_MQTT_HOST, net);
+
+    // connect with hostname as client_id, providing the configured username and password
+    uint64 count = 0;
+    while (!client.connect(ENV_HOSTNAME, ENV_MQTT_USERNAME, ENV_MQTT_PASSWORD))
+    {
+      delay(500);
+      count++;
+
+      if (count % 20 == 0)
+      {
+        // every 10s
+        _PRINT("...");
+        _PRINTLN(client.lastError());
+      }
+    }
+
+    _PRINTLN();
+    _PRINTLN("[mqtt] connected ");
 }
 
 void setup()
 {
-  serialInit();
-  sensorInit();
-  wifiInit();
-  mqttInit();
-  otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
+    serialInit();
+    sensorInit();
+    wifiInit();
+    mqttInit();
+    otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
 
-  registerOtaStartHook([]()
-                       { stopBackgroundTasks(); });
+    registerOtaStartHook([]()
+                         { stopBackgroundTasks(); });
 
-  // keep our mqtt subscription and handler active
-  registerBackgroundTask([]()
-                         {
-                           if (!client.loop())
+    // keep our mqtt subscription and handler active
+    registerBackgroundTask([]()
                            {
-                             _PRINT("[mqtt] loop error ");
-                             _PRINTLN(client.lastError());
-                           }
-                           delay(10);
-                           mqttInit();
-                         });
+                             if (!client.loop())
+                             {
+                               _PRINT("[mqtt] loop error ");
+                               _PRINTLN(client.lastError());
+                             }
+                             delay(10);
+                             mqttInit();
+                           });
 
-  // read fuel level, report
-  registerBackgroundTask([]()
-                         { updateFuelLevel(); });
+    // read fuel level, report
+    registerBackgroundTask([]()
+                           { updateFuelLevel(); });
 
-  // update local dns, just in case
-  registerBackgroundTask([]()
-                         { MDNS.update(); });
+    // update local dns, just in case
+    registerBackgroundTask([]()
+                           { MDNS.update(); });
 
-  // check if we have ota updates
-  registerBackgroundTask([]()
-                         { handleOTA(); });
+    // check if we have ota updates
+    registerBackgroundTask([]()
+                           { handleOTA(); });
 }
 
 void loop()

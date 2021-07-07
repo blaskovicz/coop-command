@@ -1,3 +1,4 @@
+
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266mDNS.h>
@@ -54,6 +55,8 @@ const String commandTopicPrefix = "cmd/coop_command/";
 const String stateTopicPrefix = "stat/coop_command/";
 const String topicSuffix_door0 = "door0";
 const String topicSuffix_door1 = "door1";
+const String topicSuffix_esp = "esp";
+const String topicSuffix_esp_reboot = "reboot";
 const String topicSuffix_door_open = "open";
 const String topicSuffix_led0 = "led0";
 const String topicSuffix_led_rgb = "rgb";
@@ -258,6 +261,12 @@ void handleMQTTMessage(String &topic, String &payload)
       _PRINTLN("[mqtt] ... unknown door topic");
     }
   }
+  else if (entityName == topicSuffix_esp)
+  {
+    if (stateField == topicSuffix_esp_reboot)
+    {
+        }
+  }
   else
   {
     _PRINTLN("[mqtt] ... unknown topic 3");
@@ -451,12 +460,12 @@ void handleQueuedState()
     // so we do it in a seperate function after said handler completes (client.loop -> handleMQTTMessage)
     if (deferUpdateLEDs > 0)
     {
-      deferUpdateLEDs--;
+      deferUpdateLEDs = 0;
       updateLEDs();
     }
     if (deferUpdateDoors > 0)
     {
-      deferUpdateDoors--;
+      deferUpdateDoors = 0;
       updateDoors();
     }
   }
@@ -472,30 +481,33 @@ void setup()
   previousMQTTStateInit();
   otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
 
-  registerOtaStartHook([]() {
-    stopBackgroundTasks();
-  });
+  registerOtaStartHook([]()
+                       { stopBackgroundTasks(); });
 
   // keep our mqtt subscription and handler active
-  registerBackgroundTask([]() {
-    if (!client.loop())
-    {
-      _PRINT("[mqtt] loop error ");
-      _PRINTLN(client.lastError());
-    }
-    delay(10);
-    mqttInit();
-    handleQueuedState();
-  });
+  registerBackgroundTask([]()
+                         {
+                           if (!client.loop())
+                           {
+                             _PRINT("[mqtt] loop error ");
+                             _PRINTLN(client.lastError());
+                           }
+                           delay(10);
+                           mqttInit();
+                           handleQueuedState();
+                         });
 
   // read temperature and humidity, report
-  registerBackgroundTask([]() { updateDHTValues(); });
+  registerBackgroundTask([]()
+                         { updateDHTValues(); });
 
   // update local dns, just in case
-  registerBackgroundTask([]() { MDNS.update(); });
+  registerBackgroundTask([]()
+                         { MDNS.update(); });
 
   // check if we have ota updates
-  registerBackgroundTask([]() { handleOTA(); });
+  registerBackgroundTask([]()
+                         { handleOTA(); });
 }
 
 void loop()
