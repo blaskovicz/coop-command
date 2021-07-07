@@ -1,0 +1,7 @@
+* text=auto
+
+*.ino text
+*.h text
+*.h.sample text
+*.html text
+*.sh
