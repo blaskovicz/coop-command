@@ -17,9 +17,6 @@ WiFiClient net;
 MQTTClient client;
 Adafruit_VL6180X vlSensor = Adafruit_VL6180X();
 
-const String stateTopicPrefix = "stat/furnace/";
-const String topicSuffix_fuelLevel = "fuel-test";
-
 /**
  *    [ VL ]
  * | ------- | top of guage                  -----          
@@ -35,7 +32,7 @@ const String topicSuffix_fuelLevel = "fuel-test";
  * |         |                                 |   3 CM
  * | ------- | E (empty line)                -----
  */
-unsigned int convertVlRange(unsigned int rangeInMM)
+unsigned int convertVlRangeToGallonsRemaining(unsigned int rangeInMM)
 {
   // assume we have a 330 gallon tank.
   if (rangeInMM <= 12)
@@ -95,7 +92,7 @@ bool readVL()
   int successes = 0;
   int de = 100;
 
-  _PRINTLN(String("[vl-sensor][")+String(millis())+String("] reading ") + String(times) + String("x"));
+  _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] reading ") + String(times) + String("x"));
   for (i = 0; i < times; i++)
   {
     delay(de);
@@ -112,7 +109,7 @@ bool readVL()
   int expectedMin = times / 2;
   if (successes < expectedMin)
   {
-    _PRINTLN(String("[vl-sensor][")+String(millis())+String("] read threshold failed; expected at least ") + String(expectedMin) + String(", got ") + String(successes));
+    _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] read threshold failed; expected at least ") + String(expectedMin) + String(", got ") + String(successes));
     return false;
   }
 
@@ -120,7 +117,7 @@ bool readVL()
   lastVlRange = vlSum / successes;
   lastUpdatedMillis = millis();
 
-  _PRINTLN(String("[vl-sensor][")+String(millis())+String("] read ") + String(lastVlRange) + String(" (was ") + String(previousVlRange) + String(") from ") + String(successes) + String(" of ") + String(times) + String(" checks"));
+  _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] read ") + String(lastVlRange) + String(" (was ") + String(previousVlRange) + String(") from ") + String(successes) + String(" of ") + String(times) + String(" checks"));
 
   return true;
 }
@@ -189,122 +186,129 @@ void updateFuelLevel()
   // wait at least 30 min between reads
   unsigned long int nowMs = millis();
   if (
-    (lastUpdatedMillis > 0 && (nowMs - lastUpdatedMillis) < (30*ONE_MINUTE_MS)) ||
-    !readVL()
-  )
+      (lastUpdatedMillis > 0 && (nowMs - lastUpdatedMillis) < (30 * ONE_MINUTE_MS)) ||
+      !readVL())
   {
     return;
   }
 
-  if (lastVlRange > 0)
+  if (lastVlRange <= 0 || !client.connected())
   {
-    // convert to gallons left
-    unsigned int gallonsRemaining = convertVlRange(lastVlRange);
-    _PRINTLN(String("[vl-sensor] reporting ") + String(gallonsRemaining));
-    if (client.connected())
-    {
-      client.publish(stateTopicPrefix + topicSuffix_fuelLevel, String(gallonsRemaining), true, 2);
-    }
+    return;
+  }
+
+  // build and publish influx format message to mqtt for fuel level
+  // see https://docs.influxdata.com/influxdb/v1.8/write_protocols/line_protocol_tutorial/#syntax
+  String message = String("fuel level=") + String(convertVlRangeToGallonsRemaining(lastVlRange));
+
+  _PRINTLN(String("[vl-sensor] reporting ") + message);
+  bool published = client.publish(ENV_MQTT_TOPIC, message, true, 2);
+
+  if (!published)
+  {
+    _PRINTLN("[mqtt] publish.error");
   }
 }
 
 void sensorInit()
 {
-    _PRINT("[vl-sensor] startup ");
-    uint64 count = 0;
-    while (!vlSensor.begin())
-    {
-      delay(500);
-      count++;
+  _PRINT("[vl-sensor] startup ");
+  uint64 count = 0;
+  while (!vlSensor.begin())
+  {
+    delay(500);
+    count++;
 
-      if (count % 20 == 0)
-      {
-        // every 10s
-        _PRINT(".");
-      }
+    if (count % 20 == 0)
+    {
+      // every 10s
+      _PRINT(".");
     }
-    _PRINTLN();
-    _PRINTLN("[vl-sensor] started");
+  }
+  _PRINTLN();
+  _PRINTLN("[vl-sensor] started");
 }
 
 void mqttInit()
 {
-    if (client.connected())
+  if (client.connected())
+  {
+    return;
+  }
+
+  // Connect to WiFi network
+  _PRINT("[mqtt] connecting to ");
+  _PRINTLN(ENV_MQTT_HOST);
+  _PRINT("[mqtt] ");
+  _FLUSH();
+
+  // max time to go without a packet from client to broker.
+  // the underlying library should continue to call PINGREQ packets in client.loop().
+  client.setKeepAlive(240);
+
+  // persist session messages in case we disconnect and re-connect
+  client.setCleanSession(false);
+
+  // timeout for any command
+  client.setTimeout(5000);
+
+  client.begin(ENV_MQTT_HOST, net);
+
+  // connect with hostname as client_id, providing the configured username and password
+  uint64 count = 0;
+  while (!client.connect(ENV_HOSTNAME, ENV_MQTT_USERNAME, ENV_MQTT_PASSWORD))
+  {
+    delay(500);
+    count++;
+
+    if (count % 20 == 0)
     {
-      return;
+      // every 10s
+      _PRINT("...");
+      _PRINTLN(client.lastError());
     }
+  }
 
-    // Connect to WiFi network
-    _PRINT("[mqtt] connecting to ");
-    _PRINTLN(ENV_MQTT_HOST);
-    _PRINT("[mqtt] ");
-    _FLUSH();
-
-    // max time to go without a packet from client to broker.
-    // the underlying library should continue to call PINGREQ packets in client.loop().
-    client.setKeepAlive(240);
-
-    // persist session messages in case we disconnect and re-connect
-    client.setCleanSession(false);
-
-    // timeout for any command
-    client.setTimeout(5000);
-
-    client.begin(ENV_MQTT_HOST, net);
-
-    // connect with hostname as client_id, providing the configured username and password
-    uint64 count = 0;
-    while (!client.connect(ENV_HOSTNAME, ENV_MQTT_USERNAME, ENV_MQTT_PASSWORD))
-    {
-      delay(500);
-      count++;
-
-      if (count % 20 == 0)
-      {
-        // every 10s
-        _PRINT("...");
-        _PRINTLN(client.lastError());
-      }
-    }
-
-    _PRINTLN();
-    _PRINTLN("[mqtt] connected ");
+  _PRINTLN();
+  _PRINTLN("[mqtt] connected ");
 }
 
 void setup()
 {
-    serialInit();
-    sensorInit();
-    wifiInit();
-    mqttInit();
-    otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
+  serialInit();
+  sensorInit();
+  wifiInit();
+  mqttInit();
+  otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
 
-    registerOtaStartHook([]()
-                         { stopBackgroundTasks(); });
+  registerOtaStartHook([]()
+                       { stopBackgroundTasks(); });
 
-    // keep our mqtt subscription and handler active
-    registerBackgroundTask([]()
+  // keep our mqtt subscription and handler active
+  registerBackgroundTask([]()
+                         {
+                           if (!client.loop())
                            {
-                             if (!client.loop())
-                             {
-                               _PRINT("[mqtt] loop error ");
-                               _PRINTLN(client.lastError());
-                             }
-                             delay(10);
-                             mqttInit();
-                           });
+                             _PRINT("[mqtt] loop last-error=");
+                             _PRINT(client.lastError());
+                             _PRINT(" return-code=");
+                             _PRINTLN(client.returnCode());
+                           }
+                           delay(10);
+                           mqttInit();
+                         });
 
-    // read fuel level, report
-    registerBackgroundTask([]()
-                           { updateFuelLevel(); });
+  // read fuel level, report
+  registerBackgroundTask([]()
+                         { updateFuelLevel(); });
 
-    // update local dns, just in case
-    registerBackgroundTask([]()
-                           { MDNS.update(); });
+  // update local dns, just in case
+  registerBackgroundTask([]()
+                         { MDNS.update(); });
 
-    // check if we have ota updates
-    registerBackgroundTask([]()
-                           { handleOTA(); });
+  // check if we have ota updates
+  registerBackgroundTask([]()
+                         { handleOTA(); });
 }
 
 void loop()
