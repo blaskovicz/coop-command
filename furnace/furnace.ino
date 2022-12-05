@@ -76,40 +76,52 @@ void wifiInit()
   _PRINT("[wifi] connected ");
   _PRINTLN(WiFi.localIP());
 
-  // start local dns server (coop-command.local)
+  // start local dns server (furnace.local)
   if (MDNS.begin(ENV_HOSTNAME))
   {
-    Serial.printf("[http] MDNS responder started for %s.local\n", ENV_HOSTNAME);
+    _PRINTF("[http] MDNS responder started for %s.local\n", ENV_HOSTNAME);
   }
 }
 
 bool readVL()
 {
   int times = 20;
+  int minSuccessTimes = times / 2;
+  
   int i;
+  
   uint8_t vlValue;
   unsigned int vlSum = 0;
+  
   int successes = 0;
-  int de = 100;
+
+  int delayMs = 100;
 
   _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] reading ") + String(times) + String("x"));
   for (i = 0; i < times; i++)
   {
-    delay(de);
+    delay(delayMs);
+
     vlValue = readVLSingle();
     if (vlValue == 0)
     {
+      // exponentially increasing on each failure
+      // eg: 100 -> 200 -> 400 -> 800..
+      delayMs += delayMs;
       continue;
     }
+
     successes++;
     vlSum += vlValue;
+
+    // reset delay upon failure
+    delayMs = 100;
   }
 
-  // 50% must succeed
-  int expectedMin = times / 2;
-  if (successes < expectedMin)
+  // threshold not met, return false
+  if (successes < minSuccessTimes)
   {
-    _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] read threshold failed; expected at least ") + String(expectedMin) + String(", got ") + String(successes));
+    _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] read threshold failed; expected>=") + String(minSuccessTimes) + String(" got=") + String(successes));
     return false;
   }
 
@@ -135,47 +147,51 @@ uint8_t readVLSingle()
     return range;
   }
 
+  _PRINT(String("[vl-sensor] "));
+
   // an error occurred, ignore this range
   if ((status >= VL6180X_ERROR_SYSERR_1) && (status <= VL6180X_ERROR_SYSERR_5))
   {
-    Serial.println("[vl-sensor] system error");
+    _PRINT(String("system error"));
   }
   else if (status == VL6180X_ERROR_ECEFAIL)
   {
-    Serial.println("[vl-sensor] ece failure");
+    _PRINT(String("ece failure"));
   }
   else if (status == VL6180X_ERROR_NOCONVERGE)
   {
-    Serial.println("[vl-sensor] no convergence");
+    _PRINT(String("no convergence"));
   }
   else if (status == VL6180X_ERROR_RANGEIGNORE)
   {
-    Serial.println("[vl-sensor] ignoring range");
+    _PRINT(String("ignoring range"));
   }
   else if (status == VL6180X_ERROR_SNR)
   {
-    Serial.println("[vl-sensor] signal/noise error");
+    _PRINT(String("signal/noise error"));
   }
   else if (status == VL6180X_ERROR_RAWUFLOW)
   {
-    Serial.println("[vl-sensor] raw reading underflow");
+    _PRINT(String("raw reading underflow"));
   }
   else if (status == VL6180X_ERROR_RAWOFLOW)
   {
-    Serial.println("[vl-sensor] raw reading overflow");
+    _PRINT(String("raw reading overflow"));
   }
   else if (status == VL6180X_ERROR_RANGEUFLOW)
   {
-    Serial.println("[vl-sensor] range reading underflow");
+    _PRINT(String("range reading underflow"));
   }
   else if (status == VL6180X_ERROR_RANGEOFLOW)
   {
-    Serial.println("[vl-sensor] range reading overflow");
+    _PRINT(String("range reading overflow"));
   }
   else
   {
-    Serial.println("[vl-sensor] unknown error");
+    _PRINT(String("unknown error ") + String(status));
   }
+
+  _PRINTLN();
 
   return 0;
 }
@@ -201,7 +217,7 @@ void updateFuelLevel()
   // see https://docs.influxdata.com/influxdb/v1.8/write_protocols/line_protocol_tutorial/#syntax
   String message = String("fuel level=") + String(convertVlRangeToGallonsRemaining(lastVlRange));
 
-  _PRINTLN(String("[vl-sensor] reporting ") + message);
+  _PRINTLN(String("[vl-sensor] reporting ") + String(ENV_MQTT_TOPIC) + String(" ") + message);
   bool published = client.publish(ENV_MQTT_TOPIC, message, true, 2);
 
   if (!published)
@@ -264,7 +280,7 @@ void mqttInit()
     if (count % 20 == 0)
     {
       // every 10s
-      _PRINT("...");
+      _PRINT(".");
       _PRINTLN(client.lastError());
     }
   }
@@ -314,4 +330,5 @@ void setup()
 void loop()
 {
   backgroundTasks();
+  _FLUSH();
 }
