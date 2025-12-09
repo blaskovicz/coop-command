@@ -33,11 +33,11 @@ Adafruit_VL6180X vlSensor = Adafruit_VL6180X();
  * |         |                                 |   3 CM
  * | ------- | E (empty line)                -----
  */
-const unsigned int GALLONS_FULL = 330;
-const unsigned int GALLONS_EMPTY = 0;
-const unsigned int MM_FULL = 12;
-const unsigned int MM_EMPTY = 75;
-unsigned int convertVlRangeToGallonsRemaining(unsigned int rangeInMM)
+const float GALLONS_FULL = 330.0;
+const float GALLONS_EMPTY = 0.0;
+const float MM_FULL = 12.0;
+const float MM_EMPTY = 75.0;
+unsigned int convertVlRangeToGallonsRemaining(float rangeInMM)
 {
   if (rangeInMM <= MM_FULL)
   {
