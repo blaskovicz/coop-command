@@ -2,6 +2,7 @@
 #include <WiFiClient.h>
 #include <ESP8266mDNS.h>
 #include <Wire.h>
+#include <math.h>
 #include "Adafruit_VL6180X.h"
 #include <MQTT.h>
 
@@ -32,18 +33,25 @@ Adafruit_VL6180X vlSensor = Adafruit_VL6180X();
  * |         |                                 |   3 CM
  * | ------- | E (empty line)                -----
  */
+const unsigned int GALLONS_FULL = 330;
+const unsigned int GALLONS_EMPTY = 0;
+const unsigned int MM_FULL = 12;
+const unsigned int MM_EMPTY = 75;
 unsigned int convertVlRangeToGallonsRemaining(unsigned int rangeInMM)
 {
-  // assume we have a 330 gallon tank.
-  if (rangeInMM <= 12)
+  if (rangeInMM <= MM_FULL)
   {
-    return 0;
+    return GALLONS_FULL;
+  }
+  if (rangeInMM >= MM_EMPTY)
+  {
+    return GALLONS_EMPTY;
   }
 
-  unsigned int gallonsRemaining = static_cast<unsigned int>(330.0 - (330.0 / (75.0 - 12.0) * (rangeInMM - 12.0)));
-  if (gallonsRemaining > 330)
+  unsigned int gallonsRemaining = static_cast<unsigned int>(GALLONS_FULL - (GALLONS_FULL / (MM_EMPTY - MM_FULL) * (rangeInMM - MM_FULL)));
+  if (gallonsRemaining > GALLONS_FULL)
   {
-    return 330;
+    return GALLONS_FULL;
   }
   return gallonsRemaining;
 }
@@ -83,53 +91,114 @@ void wifiInit()
   }
 }
 
-bool readVL()
+/**
+ * Sorts readings array, calculates median, rejects outliers, and returns trimmed mean.
+ * @param readings Array of sensor readings (will be sorted in place)
+ * @param validCount Number of valid readings in the array
+ * @param outlierThreshold Threshold for rejecting outliers (e.g., 0.15 for 15%)
+ * @param medianOut Reference to store the calculated median
+ * @param inlierCountOut Reference to store the number of inliers after outlier rejection
+ * @return Trimmed mean of inlier readings, or 0 if too many outliers
+ */
+unsigned int calculateFilteredReading(uint8_t readings[], int validCount, float outlierThreshold, uint8_t& medianOut, int& inlierCountOut)
 {
-  int times = 20;
-  int minSuccessTimes = times / 2;
-  
-  int i;
-  
-  uint8_t vlValue;
-  unsigned int vlSum = 0;
-  
-  int successes = 0;
-
-  int delayMs = 100;
-
-  _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] reading ") + String(times) + String("x"));
-  for (i = 0; i < times; i++)
+  // Sort readings to find median (simple bubble sort for small arrays)
+  for (int i = 0; i < validCount - 1; i++)
   {
-    delay(delayMs);
-
-    vlValue = readVLSingle();
-    if (vlValue == 0)
+    for (int j = i + 1; j < validCount; j++)
     {
-      // exponentially increasing on each failure
-      // eg: 100 -> 200 -> 400 -> 800..
-      delayMs += delayMs;
-      continue;
+      if (readings[i] > readings[j])
+      {
+        uint8_t temp = readings[i];
+        readings[i] = readings[j];
+        readings[j] = temp;
+      }
     }
-
-    successes++;
-    vlSum += vlValue;
-
-    // reset delay upon failure
-    delayMs = 100;
   }
 
-  // threshold not met, return false
-  if (successes < minSuccessTimes)
+  // Calculate median
+  medianOut = readings[validCount / 2];
+  
+  // Reject outliers and calculate trimmed mean
+  // Outliers are readings that deviate more than threshold from median
+  unsigned int sum = 0;
+  inlierCountOut = 0;
+  float medianFloat = (float)medianOut;
+  
+  for (int i = 0; i < validCount; i++)
   {
-    _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] read threshold failed; expected>=") + String(minSuccessTimes) + String(" got=") + String(successes));
+    float deviation = fabs((float)readings[i] - medianFloat) / medianFloat;
+    if (deviation <= outlierThreshold)
+    {
+      sum += readings[i];
+      inlierCountOut++;
+    }
+  }
+
+  if (inlierCountOut == 0)
+  {
+    return 0;
+  }
+
+  return sum / inlierCountOut;
+}
+
+bool readVL()
+{
+  const int times = 50;  // Increased from 20 to 50 for better noise reduction
+  const int minSuccessTimes = times / 2;
+  const float OUTLIER_THRESHOLD = 0.15; // Reject readings >15% from median
+  const int DEFAULT_DELAY_MS = 150;
+  const int MAX_DELAY_MS = 60000;
+  uint8_t readings[times];
+  int validCount = 0;
+  int delayMs = DEFAULT_DELAY_MS;  // Increased delay to let sensor settle (helps with electrical noise)
+
+  _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] reading ") + String(times) + String("x"));
+  
+  // Collect all valid readings
+  for (int i = 0; i < times; i++)
+  {
+    // cap delay at 1min
+    if (delayMs > MAX_DELAY_MS)
+    {
+      delayMs = MAX_DELAY_MS;
+    }
+    delay(delayMs);
+    uint8_t vlValue = readVLSingle();
+    
+    if (vlValue == 0)
+    {
+      delayMs += delayMs; // exponential backoff on failure
+      continue;
+    }
+    
+    readings[validCount++] = vlValue;
+    delayMs = DEFAULT_DELAY_MS; // reset on success
+  }
+
+  if (validCount < minSuccessTimes)
+  {
+    _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] read threshold failed; expected>=") + String(minSuccessTimes) + String(" got=") + String(validCount));
+    return false;
+  }
+
+  // Sort, calculate median, reject outliers, and get trimmed mean
+  uint8_t median;
+  int inlierCount;
+  unsigned int filteredReading = calculateFilteredReading(readings, validCount, OUTLIER_THRESHOLD, median, inlierCount);
+
+  if (inlierCount < minSuccessTimes)
+  {
+    _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] too many outliers; kept ") + String(inlierCount) + String(" of ") + String(validCount));
     return false;
   }
 
   unsigned int previousVlRange = lastVlRange;
-  lastVlRange = vlSum / successes;
+  lastVlRange = filteredReading;
   lastUpdatedMillis = millis();
 
-  _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] read ") + String(lastVlRange) + String(" (was ") + String(previousVlRange) + String(") from ") + String(successes) + String(" of ") + String(times) + String(" checks"));
+  _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] read ") + String(lastVlRange) + String(" (median=") + String(median) + String(", was ") + String(previousVlRange) + String(") from ") + String(inlierCount) + String(" inliers of ") + String(validCount) + String(" valid"));
 
   return true;
 }
