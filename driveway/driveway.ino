@@ -217,7 +217,8 @@ void setup()
     registerBackgroundTask([]() { MDNS.update(); });
 
     // check if we have ota updates
-    registerBackgroundTask([]() { handleOTA(); });
+    // check if we have ota updates (critical task - must run even when other tasks are stopped)
+    registerBackgroundTask([]() { handleOTA(); }, true);
 
     // update our ntp client
     // registerBackgroundTask([]() { timeClient.update(); });

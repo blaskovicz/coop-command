@@ -384,8 +384,10 @@ void setup()
   // update local dns, just in case
   registerBackgroundTask([]() { MDNS.update(); });
 
-  // check if we have ota updates
-  registerBackgroundTask([]() { handleOTA(); });
+  // check if we have ota updates (critical task - must run even when other tasks are stopped)
+  const bool isCritical = true;
+  // check if we have ota updates (critical task - must run even when other tasks are stopped)
+  registerBackgroundTask([]() { handleOTA(); }, isCritical);
 
   // update our ntp client
   registerBackgroundTask([]() { timeClient.update(); });

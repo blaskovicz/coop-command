@@ -391,9 +391,10 @@ void setup()
   registerBackgroundTask([]()
                          { MDNS.update(); });
 
-  // check if we have ota updates
+  // check if we have ota updates (critical task - must run even when other tasks are stopped)
+  const bool isCritical = true;
   registerBackgroundTask([]()
-                         { handleOTA(); });
+                         { handleOTA(); }, isCritical);
 }
 
 void loop()

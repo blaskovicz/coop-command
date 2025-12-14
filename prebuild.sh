@@ -3,12 +3,12 @@ set -euo pipefail
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
-steps=2
+steps=4
 
 # step 1, clean
 echo "[1/$steps - Clean]"
 rm -f $DIR/*/shared-lib-*.h \
-       $DIR/*/*-html.h |& sed 's/^/  /g'
+       $DIR/*/*-html.h 2>&1 | sed 's/^/  /g'
 
 # step 2, create all html assets as importable headers
 # REPLACED WITH data/ directories and LittleFS toolchain
@@ -61,3 +61,20 @@ for shared_lib_file in $DIR/shared-lib/*.h; do
         cp $shared_lib_file $shared_lib_target
     done
 done
+
+# check env.h is initialized for each project
+echo "[3/$steps - Check env.h]"
+for project_dir in $DIR/*; do
+    if [[ "$project_dir" =~ "shared-lib" || ! -d "$project_dir" ]]; then
+        continue
+    fi
+
+    env_file=$project_dir/env.h
+    # if there is a env.h.sample, but no env.h, copy it
+    if [[ -f "$project_dir/env.h.sample" && ! -f "$env_file" ]]; then
+        echo "  $env_file not found, initializing with sample"
+        cp $project_dir/env.h.sample $env_file
+    fi
+done
+
+echo "[4/$steps - Done]"

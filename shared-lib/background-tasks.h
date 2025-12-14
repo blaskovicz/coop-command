@@ -3,9 +3,14 @@
 
 typedef void (*taskFunction)();
 
+struct Task {
+    taskFunction func;
+    bool isCritical;
+};
+
 int taskIndex = 0;
 int taskCap = 5;
-taskFunction *tasks = NULL;
+Task *tasks = NULL;
 bool stopped = false;
 
 void stopBackgroundTasks()
@@ -22,37 +27,39 @@ void resumeBackgroundTasks()
 // like an http request handler
 void backgroundTasks()
 {
-    if (tasks == NULL || stopped)
+    if (tasks == NULL)
     {
         return;
     }
 
     for (int i = 0; i < taskIndex; i++)
     {
-        if (stopped)
+        // critical tasks run even when stopped
+        if (stopped && !tasks[i].isCritical)
         {
-            break;
+            continue;
         }
-        tasks[i]();
+        tasks[i].func();
     }
 }
 
 // https://stackoverflow.com/a/31521586/626810
-void registerBackgroundTask(taskFunction func)
+void registerBackgroundTask(taskFunction func, bool isCritical = false)
 {
     if (tasks == NULL)
     {
-        tasks = new taskFunction[taskCap];
+        tasks = new Task[taskCap];
     }
 
-    tasks[taskIndex] = func;
+    tasks[taskIndex].func = func;
+    tasks[taskIndex].isCritical = isCritical;
     taskIndex++;
 
     if (taskIndex == taskCap)
     {
         // double up
         int newCap = taskCap * 2;
-        taskFunction *newTasks = new taskFunction[newCap];
+        Task *newTasks = new Task[newCap];
         for (int i = 0; i < taskIndex; i++)
         {
             newTasks[i] = tasks[i];
