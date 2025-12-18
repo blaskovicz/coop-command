@@ -10,6 +10,7 @@
 #include "shared-lib-ota.h"
 #include "shared-lib-background-tasks.h"
 #include "shared-lib-serial.h"
+#include "shared-lib-web-server.h"
 
 unsigned long int lastUpdatedMillis = 0;
 unsigned int lastVlRange = 0;
@@ -37,6 +38,7 @@ const float GALLONS_FULL = 330.0;
 const float GALLONS_EMPTY = 0.0;
 const float MM_FULL = 12.0;
 const float MM_EMPTY = 75.0;
+
 unsigned int convertVlRangeToGallonsRemaining(float rangeInMM)
 {
   if (rangeInMM <= MM_FULL)
@@ -265,6 +267,70 @@ uint8_t readVLSingle()
   return 0;
 }
 
+void handleRoot()
+{
+  String response = "";
+  
+  // IP Address
+  response += "IP Address: ";
+  response += WiFi.localIP().toString();
+  response += "\n";
+  
+  // MQTT Connection Status
+  response += "MQTT Connected: ";
+  response += client.connected() ? "yes" : "no";
+  response += "\n";
+  
+  // Last Read Timestamp
+  response += "Last Read Timestamp: ";
+  if (lastUpdatedMillis > 0)
+  {
+    unsigned long seconds = lastUpdatedMillis / 1000;
+    unsigned long minutes = seconds / 60;
+    unsigned long hours = minutes / 60;
+    unsigned long days = hours / 24;
+    
+    response += String(days) + "d " + String(hours % 24) + "h " + String(minutes % 60) + "m " + String(seconds % 60) + "s ago";
+    response += " (" + String(lastUpdatedMillis) + " ms)";
+  }
+  else
+  {
+    response += "never";
+  }
+  response += "\n";
+  
+  // Gallons Remaining
+  response += "Gallons Remaining: ";
+  if (lastVlRange > 0)
+  {
+    response += String(convertVlRangeToGallonsRemaining(lastVlRange));
+  }
+  else
+  {
+    response += "unknown";
+  }
+  response += "\n";
+  
+  // Raw Sensor Reading
+  response += "Raw Sensor Reading (mm): ";
+  if (lastVlRange > 0)
+  {
+    response += String(lastVlRange);
+  }
+  else
+  {
+    response += "unknown";
+  }
+  response += "\n";
+  
+  // Hostname
+  response += "Hostname: ";
+  response += ENV_HOSTNAME;
+  response += "\n";
+  
+  server.send(200, "text/plain", response);
+}
+
 const unsigned long int ONE_MINUTE_MS = 60000;
 void updateFuelLevel()
 {
@@ -365,6 +431,10 @@ void setup()
   wifiInit();
   mqttInit();
   otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
+  serverInit();
+
+  // setup web server routes
+  server.on("/", handleRoot);
 
   registerOtaStartHook([]()
                        { stopBackgroundTasks(); });

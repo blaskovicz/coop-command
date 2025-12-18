@@ -265,7 +265,7 @@ void handleMQTTMessage(String &topic, String &payload)
   {
     if (stateField == topicSuffix_esp_reboot)
     {
-        }
+    }
   }
   else
   {
