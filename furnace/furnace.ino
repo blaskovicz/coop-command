@@ -14,6 +14,7 @@
 
 unsigned long int lastUpdatedMillis = 0;
 unsigned int lastVlRange = 0;
+bool isReadingFuelLevel = false;  // Guard to prevent re-entry during sensor reading
 
 WiFiClient net;
 MQTTClient client;
@@ -166,7 +167,7 @@ bool readVL()
     {
       delayMs = MAX_DELAY_MS;
     }
-    delay(delayMs);
+    delayWithBackgroundTasks(delayMs);  // Non-blocking delay to keep web server responsive
     uint8_t vlValue = readVLSingle();
     
     if (vlValue == 0)
@@ -334,11 +335,25 @@ void handleRoot()
 const unsigned long int ONE_MINUTE_MS = 60000;
 void updateFuelLevel()
 {
+  // Prevent re-entry while sensor reading is in progress
+  if (isReadingFuelLevel)
+  {
+    return;
+  }
+  
   // wait at least 30 min between reads
   unsigned long int nowMs = millis();
-  if (
-      (lastUpdatedMillis > 0 && (nowMs - lastUpdatedMillis) < (30 * ONE_MINUTE_MS)) ||
-      !readVL())
+  if (lastUpdatedMillis > 0 && (nowMs - lastUpdatedMillis) < (30 * ONE_MINUTE_MS))
+  {
+    return;
+  }
+  
+  // Set guard flag before reading
+  isReadingFuelLevel = true;
+  bool success = readVL();
+  isReadingFuelLevel = false;
+  
+  if (!success)
   {
     return;
   }
@@ -426,12 +441,12 @@ void mqttInit()
 
 void setup()
 {
-  serialInit();
-  sensorInit();
+  serialInit();  
   wifiInit();
   mqttInit();
   otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
   serverInit();
+  sensorInit();
 
   // setup web server routes
   server.on("/", handleRoot);
