@@ -268,12 +268,52 @@ uint8_t readVLSingle()
   return 0;
 }
 
+String formatMillisToRelativeTime(unsigned long milliseconds)
+{
+  unsigned long seconds = milliseconds / 1000;
+  unsigned long minutes = seconds / 60;
+  unsigned long hours = minutes / 60;
+  unsigned long days = hours / 24;
+  
+  String result = "";
+  
+  if (days > 0)
+  {
+    result += String(days) + "d ";
+  }
+  if (hours % 24 > 0)
+  {
+    result += String(hours % 24) + "h ";
+  }
+  if (minutes % 60 > 0)
+  {
+    result += String(minutes % 60) + "m ";
+  }
+  if (seconds % 60 > 0)
+  {
+    result += String(seconds % 60) + "s";
+  }
+  
+  // If all values are 0, return "0s"
+  if (result.length() == 0)
+  {
+    result = "0s";
+  }
+  else
+  {
+    // Trim trailing space if present
+    result.trim();
+  }
+  
+  return result;
+}
+
 void handleRoot()
 {
   String response = "";
   
   // IP Address
-  response += "IP Address: ";
+  response += "IP: ";
   response += WiFi.localIP().toString();
   response += "\n";
   
@@ -283,20 +323,15 @@ void handleRoot()
   response += "\n";
   
   // Last Read Timestamp
-  response += "Last Read Timestamp: ";
+  response += "Last Read: ";
   if (lastUpdatedMillis > 0)
   {
-    unsigned long seconds = lastUpdatedMillis / 1000;
-    unsigned long minutes = seconds / 60;
-    unsigned long hours = minutes / 60;
-    unsigned long days = hours / 24;
-    
-    response += String(days) + "d " + String(hours % 24) + "h " + String(minutes % 60) + "m " + String(seconds % 60) + "s ago";
+    response += formatMillisToRelativeTime(lastUpdatedMillis) + " ago";
     response += " (" + String(lastUpdatedMillis) + " ms)";
   }
   else
   {
-    response += "never";
+    response += "-";
   }
   response += "\n";
   
@@ -308,25 +343,40 @@ void handleRoot()
   }
   else
   {
-    response += "unknown";
+    response += "-";
   }
   response += "\n";
   
   // Raw Sensor Reading
-  response += "Raw Sensor Reading (mm): ";
+  response += "Raw Sensor Reading: ";
   if (lastVlRange > 0)
   {
-    response += String(lastVlRange);
+    response += String(lastVlRange) + String("mm");
   }
   else
   {
-    response += "unknown";
+    response += "-";
   }
   response += "\n";
-  
+
+  // is reading fuel level?
+  response += "Reading Fuel Level: ";
+  response += isReadingFuelLevel ? "yes" : "no";
+  response += "\n";
+
   // Hostname
   response += "Hostname: ";
   response += ENV_HOSTNAME;
+  response += "\n";
+  
+  // Git Version
+  response += "Git Version: ";
+  response += GIT_VERSION;
+  response += "\n";
+
+  // system uptime
+  response += "Uptime: ";
+  response += formatMillisToRelativeTime(millis());
   response += "\n";
   
   server.send(200, "text/plain", response);
