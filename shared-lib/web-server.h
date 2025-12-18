@@ -1,9 +1,9 @@
 #ifndef WEB_SERVER_SHARED_H
 #define WEB_SERVER_SHARED_H
 
-#include "env.h"
 #include "shared-lib-background-tasks.h"
 #include "shared-lib-serial.h"
+#include "shared-lib-date-format.h"
 #include <ESP8266WebServer.h>
 
 #ifndef SERVER_LOG_BUFFER_SIZE
@@ -16,45 +16,145 @@
 
 ESP8266WebServer server(ENV_PORT);
 
-int logStart = -1;
-int logNext = 0;
-const int logCap = SERVER_LOG_BUFFER_SIZE;
-String *logBuffer = NULL;
+// Web logging circular buffer with timestamps
+struct WebLogEntry {
+    unsigned long timestamp;
+    String message;
+};
+
+int webLogStart = -1;
+int webLogNext = 0;
+const int webLogCap = SERVER_LOG_BUFFER_SIZE;
+WebLogEntry *webLogBuffer = NULL;
+String webLogCurrentLine = "";  // Accumulates partial log lines
+
+// Add a complete log line to the web log buffer with timestamp
+void webLogAddLine(String logLine)
+{
+    if (logLine.length() == 0)
+    {
+        return;  // Skip empty lines
+    }
+
+    if (webLogBuffer == NULL)
+    {
+        webLogBuffer = new WebLogEntry[webLogCap];
+    }
+
+    if (webLogStart == webLogNext || webLogStart == -1)
+    {
+        webLogStart++;
+    }
+
+    if (webLogStart >= webLogCap)
+    {
+        webLogStart = 0;
+    }
+
+    webLogBuffer[webLogNext].timestamp = millis();
+    webLogBuffer[webLogNext].message = logLine;
+    webLogNext++;
+    if (webLogNext >= webLogCap)
+    {
+        // buffer has wrapped around
+        webLogNext = 0;
+    }
+}
+
+// Append text to current log line (for print without newline)
+void webLogAppend(String text)
+{
+    webLogCurrentLine += text;
+}
+
+// Append text and complete the line (for println)
+void webLogAppendLine(String text)
+{
+    webLogCurrentLine += text;
+    webLogAddLine(webLogCurrentLine);
+    webLogCurrentLine = "";
+}
+
+// Get all logs as a single string with relative timestamps (most recent last)
+String webLogGetAll()
+{
+    if (webLogBuffer == NULL || webLogStart == -1)
+    {
+        return "";
+    }
+
+    String result = "";
+    int count = 0;
+    unsigned long nowMillis = millis();
+    
+    // Calculate how many logs we have
+    if (webLogNext > webLogStart)
+    {
+        count = webLogNext - webLogStart;
+    }
+    else if (webLogNext < webLogStart)
+    {
+        count = webLogCap - webLogStart + webLogNext;
+    }
+    else
+    {
+        count = 0;
+    }
+
+    // Read from oldest to newest
+    for (int i = 0; i < count; i++)
+    {
+        int index = (webLogStart + i) % webLogCap;
+        String relativeTime = formatRelativeTime(webLogBuffer[index].timestamp, nowMillis);
+        result += "[" + relativeTime + " ago]";
+        result += webLogBuffer[index].message;
+        result += "\n";
+    }
+
+    return result;
+}
+
+// Get the number of logs currently stored
+int webLogGetCount()
+{
+    if (webLogBuffer == NULL || webLogStart == -1)
+    {
+        return 0;
+    }
+
+    if (webLogNext > webLogStart)
+    {
+        return webLogNext - webLogStart;
+    }
+    else if (webLogNext < webLogStart)
+    {
+        return webLogCap - webLogStart + webLogNext;
+    }
+    
+    return 0;
+}
+
+// Server control functions (defined after webLog functions so _PRINTLN macros work)
+void serverStop()
+{
+    _PRINTLN("[http] stopping server");
+    server.stop();
+}
+
+void serverStart()
+{
+    _PRINTLN("[http] starting server");
+    server.begin();
+}
 
 void serverInit()
 {
     _PRINTLN("[http] starting server on port " + String(ENV_PORT));
-    server.begin();
+    serverStart();
     registerBackgroundTask([]()
                            {
                                server.handleClient();
                            });
-}
-
-void log(String logLine)
-{
-    if (logBuffer == NULL)
-    {
-        logBuffer = new String[logCap];
-    }
-
-    if (logStart == logNext || logStart == -1)
-    {
-        logStart++;
-    }
-
-    if (logStart >= logCap)
-    {
-        logStart = -1;
-    }
-
-    logBuffer[logNext] = logLine;
-    logNext++;
-    if (logNext >= logCap)
-    {
-        // buffer has wrapped around
-        logNext = 0;
-    }
 }
 
 #endif

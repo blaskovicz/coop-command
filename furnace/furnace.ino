@@ -6,10 +6,13 @@
 #include "Adafruit_VL6180X.h"
 #include <MQTT.h>
 
+// this must be before other shared libs due to macro loading order
 #include "env.h"
+
 #include "shared-lib-ota.h"
 #include "shared-lib-background-tasks.h"
 #include "shared-lib-serial.h"
+#include "shared-lib-date-format.h"
 #include "shared-lib-web-server.h"
 
 unsigned long int lastUpdatedMillis = 0;
@@ -148,25 +151,33 @@ unsigned int calculateFilteredReading(uint8_t readings[], int validCount, float 
 
 bool readVL()
 {
-  const int times = 50;  // Increased from 20 to 50 for better noise reduction
+  const int times = 20;
   const int minSuccessTimes = times / 2;
   const float OUTLIER_THRESHOLD = 0.15; // Reject readings >15% from median
   const int DEFAULT_DELAY_MS = 150;
-  const int MAX_DELAY_MS = 60000;
+  const int MAX_DELAY_MS = 30000;
   uint8_t readings[times];
   int validCount = 0;
   int delayMs = DEFAULT_DELAY_MS;  // Increased delay to let sensor settle (helps with electrical noise)
 
-  _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] reading ") + String(times) + String("x"));
+  _PRINTLN(String("[vl-sensor]") + String(" reading ") + String(times) + String("x"));
   
   // Collect all valid readings
   for (int i = 0; i < times; i++)
   {
+    // Abort sensor reading if OTA is in progress
+    if (isOtaInProgress)
+    {
+      _PRINTLN("[vl-sensor] aborting read - OTA in progress");
+      return false;
+    }
+    
     // cap delay at 1min
     if (delayMs > MAX_DELAY_MS)
     {
       delayMs = MAX_DELAY_MS;
     }
+
     delayWithBackgroundTasks(delayMs);  // Non-blocking delay to keep web server responsive
     uint8_t vlValue = readVLSingle();
     
@@ -182,7 +193,7 @@ bool readVL()
 
   if (validCount < minSuccessTimes)
   {
-    _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] read threshold failed; expected>=") + String(minSuccessTimes) + String(" got=") + String(validCount));
+    _PRINTLN(String("[vl-sensor]") + String(" read threshold failed; expected>=") + String(minSuccessTimes) + String(" got=") + String(validCount));
     return false;
   }
 
@@ -201,7 +212,7 @@ bool readVL()
   lastVlRange = filteredReading;
   lastUpdatedMillis = millis();
 
-  _PRINTLN(String("[vl-sensor][") + String(millis()) + String("] read ") + String(lastVlRange) + String(" (median=") + String(median) + String(", was ") + String(previousVlRange) + String(") from ") + String(inlierCount) + String(" inliers of ") + String(validCount) + String(" valid"));
+  _PRINTLN(String("[vl-sensor]") + String(" read ") + String(lastVlRange) + String(" (median=") + String(median) + String(", was ") + String(previousVlRange) + String(") from ") + String(inlierCount) + String(" inliers of ") + String(validCount) + String(" valid"));
 
   return true;
 }
@@ -210,7 +221,6 @@ uint8_t readVLSingle()
 {
   // float lux = vl.readLux(VL6180X_ALS_GAIN_5);
   // Serial.print("Lux: "); Serial.println(lux);
-
   uint8_t range = vlSensor.readRange();
   uint8_t status = vlSensor.readRangeStatus();
 
@@ -268,49 +278,10 @@ uint8_t readVLSingle()
   return 0;
 }
 
-String formatMillisToRelativeTime(unsigned long milliseconds)
-{
-  unsigned long seconds = milliseconds / 1000;
-  unsigned long minutes = seconds / 60;
-  unsigned long hours = minutes / 60;
-  unsigned long days = hours / 24;
-  
-  String result = "";
-  
-  if (days > 0)
-  {
-    result += String(days) + "d ";
-  }
-  if (hours % 24 > 0)
-  {
-    result += String(hours % 24) + "h ";
-  }
-  if (minutes % 60 > 0)
-  {
-    result += String(minutes % 60) + "m ";
-  }
-  if (seconds % 60 > 0)
-  {
-    result += String(seconds % 60) + "s";
-  }
-  
-  // If all values are 0, return "0s"
-  if (result.length() == 0)
-  {
-    result = "0s";
-  }
-  else
-  {
-    // Trim trailing space if present
-    result.trim();
-  }
-  
-  return result;
-}
-
 void handleRoot()
 {
   String response = "";
+  unsigned long nowMillis = millis();
   
   // IP Address
   response += "IP: ";
@@ -326,7 +297,7 @@ void handleRoot()
   response += "Last Read: ";
   if (lastUpdatedMillis > 0)
   {
-    response += formatMillisToRelativeTime(lastUpdatedMillis) + " ago";
+    response += formatRelativeTime(lastUpdatedMillis, nowMillis) + " ago";
     response += " (" + String(lastUpdatedMillis) + " ms)";
   }
   else
@@ -368,6 +339,11 @@ void handleRoot()
   response += "Hostname: ";
   response += ENV_HOSTNAME;
   response += "\n";
+
+  // free heap
+  response += "Free Heap: ";
+  response += String(ESP.getFreeHeap()) + String(" B");
+  response += "\n";
   
   // Git Version
   response += "Git Version: ";
@@ -376,8 +352,23 @@ void handleRoot()
 
   // system uptime
   response += "Uptime: ";
-  response += formatMillisToRelativeTime(millis());
+  response += formatMillisToRelativeTime(nowMillis);
   response += "\n";
+  
+  // Add separator before logs
+  response += "\n";
+  response += "=== Recent Logs ===\n";
+  
+  // Get web logs
+  String logs = webLogGetAll();
+  if (logs.length() > 0)
+  {
+    response += logs;
+  }
+  else
+  {
+    response += "(no logs yet)\n";
+  }
   
   server.send(200, "text/plain", response);
 }
@@ -387,6 +378,12 @@ void updateFuelLevel()
 {
   // Prevent re-entry while sensor reading is in progress
   if (isReadingFuelLevel)
+  {
+    return;
+  }
+  
+  // Don't start new sensor read if OTA is in progress
+  if (isOtaInProgress)
   {
     return;
   }
@@ -491,7 +488,7 @@ void mqttInit()
 
 void setup()
 {
-  serialInit();  
+  serialInit();
   wifiInit();
   mqttInit();
   otaInit(ENV_HOSTNAME, ENV_OTA_PASSWORD);
@@ -502,7 +499,20 @@ void setup()
   server.on("/", handleRoot);
 
   registerOtaStartHook([]()
-                       { stopBackgroundTasks(); });
+                       { 
+                         _PRINTLN("[ota] stopping background tasks and sensor reads");
+                         stopBackgroundTasks();
+                         serverStop();
+                         client.disconnect();
+                         _PRINTLN("[ota] disconnected MQTT");
+                       });
+
+  registerOtaEndHook([]()
+                     { 
+                       _PRINTLN("[ota] resuming background tasks and sensor reads");
+                       serverStart();
+                       resumeBackgroundTasks();
+                     });
 
   // keep our mqtt subscription and handler active
   registerBackgroundTask([]()

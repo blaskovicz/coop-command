@@ -9,24 +9,52 @@
 
 typedef void (*hookFunction)();
 hookFunction startHook = NULL;
+hookFunction endHook = NULL;
+bool isOtaInProgress = false;
+bool otaEndHookCalled = false;  // Prevent double end hook calls
 
 void registerOtaStartHook(hookFunction func)
 {
     startHook = func;
 }
 
+void registerOtaEndHook(hookFunction func)
+{
+    endHook = func;
+}
+
 void otaStartHook()
 {
-    if (startHook == NULL)
-        return;
+    isOtaInProgress = true;
+    otaEndHookCalled = false;  // Reset for this OTA session
+    
+    if (startHook != NULL)
+    {
+        startHook();
+    }
+}
 
-    startHook();
+void otaEndHook()
+{
+    // Prevent double calls (onError and onEnd both trigger)
+    if (otaEndHookCalled)
+    {
+        return;
+    }
+    
+    otaEndHookCalled = true;
+    isOtaInProgress = false;
+    
+    if (endHook != NULL)
+    {
+        endHook();
+    }
 }
 
 // based on the guide at
 // https://arduino-esp8266.readthedocs.io/en/latest/ota_updates/readme.html#arduino-ide
 
-void otaInit(char *hostname = NULL, char *password = NULL)
+void otaInit(const char *hostname = NULL, const char *password = NULL)
 {
     // Port defaults to 8266
     // ArduinoOTA.setPort(8266);
@@ -60,6 +88,7 @@ void otaInit(char *hostname = NULL, char *password = NULL)
     });
     ArduinoOTA.onEnd([]() {
         _PRINTLN("[ota] end");
+        otaEndHook();
     });
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
         _PRINTF("[ota] progress: %u%%\r", (progress / (total / 100)));
@@ -91,6 +120,9 @@ void otaInit(char *hostname = NULL, char *password = NULL)
         {
             _PRINTLN("<unknown>");
         }
+        
+        // Resume normal operations after OTA error
+        otaEndHook();
     });
 
     ArduinoOTA.begin();
