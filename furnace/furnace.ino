@@ -342,7 +342,7 @@ void handleRoot()
 
   // free heap
   response += "Free Heap: ";
-  response += String(ESP.getFreeHeap()) + String(" B");
+  response += String(ESP.getFreeHeap()) + String("B");
   response += "\n";
   
   // Git Version
@@ -367,10 +367,30 @@ void handleRoot()
   }
   else
   {
-    response += "(no logs yet)\n";
+    response += "-\n";
   }
   
   server.send(200, "text/plain", response);
+}
+
+void handleReadSingle()
+{
+  _PRINTLN("[api] raw sensor read requested");
+  
+  delay(150); // wait for sensor to settle
+  uint8_t rawValue = readVLSingle();
+  
+  if (rawValue > 0)
+  {
+    String response = "";
+    response += "Raw Sensor Reading: " + String(rawValue) + "mm\n";
+    response += "Gallons Remaining: " + String(convertVlRangeToGallonsRemaining(rawValue)) + "\n";    
+    server.send(200, "text/plain", response);
+  }
+  else
+  {
+    server.send(500, "text/plain", "Sensor read failed");
+  }
 }
 
 const unsigned long int ONE_MINUTE_MS = 60000;
@@ -497,6 +517,7 @@ void setup()
 
   // setup web server routes
   server.on("/", handleRoot);
+  server.on("/read", handleReadSingle);
 
   registerOtaStartHook([]()
                        { 
