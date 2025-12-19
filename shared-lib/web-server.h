@@ -98,7 +98,8 @@ String webLogGetAll()
     }
     else
     {
-        count = 0;
+        // webLogNext == webLogStart after initial state means buffer is full
+        count = webLogCap;
     }
 
     // Read from oldest to newest
